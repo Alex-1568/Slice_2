@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Account Recommendations — Slice 1 (core + PasswordGenerator)
 
 Extensible synthetic account-data generator framework. **Slice 1** contains the
@@ -70,3 +71,7 @@ targets must not link `ar_random_testing` (enforced by a test).
 `docs/SLICE1.md` design and corrections - `docs/VERIFICATION.md` commands and evidence -
 `docs/SENSITIVE_DATA.md` - `docs/RANDOMNESS_AUDIT.md` - `docs/API_AUDIT.md` - `docs/PORTABILITY.md` - `docs/DEPENDENCIES.md` -
 `docs/mutation-report.md`.
+=======
+# Slice_2
+AR_Slice2 vr3
+>>>>>>> fb6299deb583b6a223b795880e6f4d9e86c399d6
