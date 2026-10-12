@@ -1,0 +1,4 @@
+add_executable(ar_cli_demo main.cpp)
+target_link_libraries(ar_cli_demo PRIVATE ar_core ar_random ar_generators)
+ar_enable_warnings(ar_cli_demo)
+ar_enable_sanitizers(ar_cli_demo)

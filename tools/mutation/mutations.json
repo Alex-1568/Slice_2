@@ -1,0 +1,423 @@
+{
+  "schema": 1,
+  "note": "Each mutation replaces exactly one occurrence of `old` with `new` in a COPY of the tree. expected_failures lists the ctest names that must fail.",
+  "mutations": [
+    {
+      "id": "M01",
+      "description": "Modulo-biased index instead of rejection sampling",
+      "file": "src/domain/random/IRandomProvider.cpp",
+      "old": "        const std::uint64_t word = nextUInt64();\n        if (word >= threshold)\n            return static_cast<std::size_t>(word % bound);",
+      "new": "        const std::uint64_t word = nextUInt64();\n        (void)threshold;\n        return static_cast<std::size_t>(word % bound);",
+      "expected_failures": [
+        "tst_random"
+      ],
+      "rationale": "scripted word 0 must be rejected for bound 3"
+    },
+    {
+      "id": "M02",
+      "description": "Final shuffle removed (required characters stay clustered at the front)",
+      "file": "src/generators/password/PasswordAlgorithm.cpp",
+      "old": "    secureShuffle(password, random);\n\n    if",
+      "new": "    if",
+      "expected_failures": [
+        "tst_password_unit",
+        "tst_entropy_semantics"
+      ],
+      "rationale": "positional-bias test and exact-distribution test"
+    },
+    {
+      "id": "M03",
+      "description": "Duplicate characters leak when duplicates are forbidden (swap-remove skipped)",
+      "file": "src/generators/password/PasswordAlgorithm.cpp",
+      "old": "    if (it != candidates.end()) {",
+      "new": "    if (false) {",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_password_properties",
+        "tst_robustness"
+      ],
+      "rationale": "no-duplicates properties"
+    },
+    {
+      "id": "M04",
+      "description": "C rand() used for character choice",
+      "file": "src/generators/password/PasswordAlgorithm.cpp",
+      "old": "char32_t pickRandom(const std::u32string& pool, IRandomProvider& random)\n{",
+      "new": "char32_t pickRandom(const std::u32string& pool, IRandomProvider& random)\n{\n    (void)random;\n    return pool[static_cast<std::size_t>(rand()) % pool.size()];",
+      "expected_failures": [
+        "tst_security"
+      ],
+      "rationale": "source scan forbids rand(); distribution tests also fail"
+    },
+    {
+      "id": "M05",
+      "description": "Batch uniqueness not enforced",
+      "file": "src/generators/password/PasswordGenerator.cpp",
+      "old": "} else if (!seen.contains(password)) {",
+      "new": "} else if (true) {",
+      "expected_failures": [
+        "tst_password_generator"
+      ],
+      "rationale": "unique batch must contain no duplicates"
+    },
+    {
+      "id": "M06",
+      "description": "Excluded characters ignored when building pools",
+      "file": "src/generators/password/CharacterPools.cpp",
+      "old": "    return difference(source, excluded);",
+      "new": "    return source;",
+      "expected_failures": [
+        "tst_password_unit"
+      ],
+      "rationale": "exclusion semantics"
+    },
+    {
+      "id": "M07",
+      "description": "Non-CSPRNG provider accepted by security-sensitive generator",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "    if (metadata.requiresSecureRandom && !context.random().isCryptographicallySecure()\n        && !context.insecureRandomPermitted())",
+      "new": "    if (false)",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_security"
+      ],
+      "rationale": "insecure provider must be rejected outside test mode"
+    },
+    {
+      "id": "M08",
+      "description": "RandomSourceError swallowed (generation 'succeeds' with a failed RNG)",
+      "file": "src/generators/password/PasswordGenerator.cpp",
+      "old": "    } catch (const domain::RandomSourceError&) {\n        return SummaryResult::failure(GenerationError::randomSourceFailure());\n    }",
+      "new": "    } catch (const domain::RandomSourceError&) {\n        summary.status = CompletionStatus::Completed;\n        return SummaryResult::success(summary);\n    }",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_security"
+      ],
+      "rationale": "failing source must yield an error"
+    },
+    {
+      "id": "M09",
+      "description": "Log channel lets sensitive values through",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "        return FieldHandling::Redact; // never configurable, never unlockable",
+      "new": "        return FieldHandling::Allow;",
+      "expected_failures": [
+        "tst_sensitive",
+        "tst_security"
+      ],
+      "rationale": "logs must never receive secrets"
+    },
+    {
+      "id": "M10",
+      "description": "Minimum category counts ignored during generation",
+      "file": "src/generators/password/PasswordAlgorithm.cpp",
+      "old": "            for (std::size_t i = 0; i < config.minimumFor(category); ++i) {",
+      "new": "            for (std::size_t i = 0; i < 0; ++i) {",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_password_properties",
+        "tst_robustness"
+      ],
+      "rationale": "category minimums"
+    },
+    {
+      "id": "M11",
+      "description": "Entropy lower bound reported as the upper bound (overstated)",
+      "file": "src/generators/password/EntropyEstimator.cpp",
+      "old": "    estimate.lowerBoundBits = std::min(lower, upper); // guard against rounding noise",
+      "new": "    estimate.lowerBoundBits = upper;",
+      "expected_failures": [
+        "tst_password_unit",
+        "tst_entropy_semantics"
+      ],
+      "rationale": "semantic split of entropy"
+    },
+    {
+      "id": "M12",
+      "description": "Band classified from the optimistic upper bound",
+      "file": "src/generators/password/EntropyEstimator.cpp",
+      "old": "    return classifyBand(estimate.conservativeBits(), thresholds);",
+      "new": "    return classifyBand(estimate.upperBoundBits, thresholds);",
+      "expected_failures": [
+        "tst_password_unit"
+      ],
+      "rationale": "band must use the conservative bound"
+    },
+    {
+      "id": "M13",
+      "description": "Min-entropy lower bound made unsound (one extra fill symbol credited)",
+      "file": "src/generators/password/EntropyEstimator.cpp",
+      "old": "        lower += static_cast<double>(length - minimumTotal) * log2Of(allowed);",
+      "new": "        lower += static_cast<double>(length - minimumTotal + 1) * log2Of(allowed);",
+      "expected_failures": [
+        "tst_password_unit",
+        "tst_entropy_semantics"
+      ],
+      "rationale": "bound must stay below the true min-entropy"
+    },
+    {
+      "id": "M14",
+      "description": "Workspace channel stops omitting sensitive values",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "    case OutputChannel::Persistence:\n    case OutputChannel::Workspace:\n",
+      "new": "    case OutputChannel::Persistence:\n",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "workspace follows persistence opt-in"
+    },
+    {
+      "id": "M15",
+      "description": "Undeclared output fields fail open instead of closed",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "    return m_sensitiveKeys.contains(key) || !m_declaredKeys.contains(key);",
+      "new": "    return m_sensitiveKeys.contains(key);",
+      "expected_failures": [
+        "tst_sensitive",
+        "tst_security"
+      ],
+      "rationale": "fail-closed behaviour"
+    },
+    {
+      "id": "M16",
+      "description": "Parameter-count ceiling removed",
+      "file": "src/domain/generator/ConfigurationSchema.cpp",
+      "old": "limits.maxParameterCount) {",
+      "new": "limits.maxParameterCount + 1000000000u) {",
+      "expected_failures": [
+        "tst_robustness"
+      ],
+      "rationale": "hostile parameter objects"
+    },
+    {
+      "id": "M17",
+      "description": "Generated-length ceiling ignores ApplicationLimits",
+      "file": "src/generators/password/PasswordValidator.cpp",
+      "old": "config.length > limits.maxOutputLength)",
+      "new": "config.length > 512)",
+      "expected_failures": [
+        "tst_robustness"
+      ],
+      "rationale": "limits must be centralized"
+    },
+    {
+      "id": "M18",
+      "description": "Cancellation never observed",
+      "file": "src/generators/password/PasswordGenerator.cpp",
+      "old": "            if (context.isCancelled()) {",
+      "new": "            if (false) {",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_robustness",
+        "concurrency_check"
+      ],
+      "rationale": "cooperative cancellation"
+    },
+    {
+      "id": "M19",
+      "description": "Batch ceiling not enforced",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "> context.limits().maxBatchSize)",
+      "new": "> static_cast<std::size_t>(-1))",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_robustness",
+        "tst_security"
+      ],
+      "rationale": "batch limit"
+    },
+    {
+      "id": "M20",
+      "description": "Provably impossible unique batches no longer rejected up front",
+      "file": "src/generators/password/PasswordGenerator.cpp",
+      "old": "if (prepared.entropy.upperBoundBits < neededBits - kBitsTolerance)",
+      "new": "if (false)",
+      "expected_failures": [
+        "tst_password_unit",
+        "tst_robustness"
+      ],
+      "rationale": "unique feasibility check"
+    },
+    {
+      "id": "M21",
+      "description": "Dangerous Unicode accepted as custom characters",
+      "file": "src/generators/password/CharacterPools.cpp",
+      "old": "bool isAcceptableCustomCharacter(char32_t c)\n{",
+      "new": "bool isAcceptableCustomCharacter(char32_t c)\n{\n    return true;",
+      "expected_failures": [
+        "tst_password_unit",
+        "tst_robustness"
+      ],
+      "rationale": "whitespace/control/format characters"
+    },
+    {
+      "id": "M22",
+      "description": "Plugin API version not checked",
+      "file": "src/domain/plugin/IGeneratorPlugin.cpp",
+      "old": "    if (plugin.apiVersion() != kGeneratorApiVersion)",
+      "new": "    if (false)",
+      "expected_failures": [
+        "tst_plugin_boundary"
+      ],
+      "rationale": "plugin compatibility boundary"
+    },
+    {
+      "id": "M23",
+      "description": "Secure provider ignores an entropy-source failure and returns the (zero) buffer",
+      "file": "src/infrastructure/random/SecureRandomProvider.cpp",
+      "old": "    if (!filled)\n        throw domain::RandomSourceError(\n            (\"operating-system entropy source failed: \" + filled.error().description).toStdString());\n    return word;",
+      "new": "    (void)filled;\n    return word;",
+      "expected_failures": [
+        "tst_secure_random"
+      ],
+      "rationale": "fault injection: a failing source must surface as RandomSourceError"
+    },
+    {
+      "id": "M24",
+      "description": "Registry accepts duplicate generator ids",
+      "file": "src/domain/generator/GeneratorRegistry.cpp",
+      "old": "    if (duplicate)",
+      "new": "    if (false)",
+      "expected_failures": [
+        "tst_registry",
+        "tst_plugin_boundary"
+      ],
+      "rationale": "duplicate-id detection"
+    },
+    {
+      "id": "M25",
+      "description": "Default (production) SecureRandomProvider is no longer attested as secure",
+      "file": "src/infrastructure/random/SecureRandomProvider.cpp",
+      "old": "    : domain::IRandomProvider(domain::SecureAttestation{}) // the only place a token is minted",
+      "new": "    : domain::IRandomProvider()",
+      "expected_failures": [
+        "tst_secure_random"
+      ],
+      "rationale": "the production provider must carry the attestation"
+    },
+    {
+      "id": "M26",
+      "description": "Real OS backend silently reports success when getrandom fails",
+      "file": "src/infrastructure/random/OperatingSystemEntropy.cpp",
+      "old": "            if (got < 0) {\n                const int code = errno;",
+      "new": "            if (got < 0) {\n                return VoidResult::success();\n                const int code = errno;",
+      "expected_failures": [
+        "tst_secure_random"
+      ],
+      "rationale": "seccomp-denied getrandom must be reported, not hidden"
+    },
+    {
+      "id": "M27",
+      "description": "Export/Clipboard release sensitive values without authorization",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "        return authorization.permits(channel) ? FieldHandling::Allow : FieldHandling::Redact;",
+      "new": "        return FieldHandling::Allow;",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "no plaintext to export/clipboard without explicit authorization"
+    },
+    {
+      "id": "M28",
+      "description": "Authorization is not bound to its channel",
+      "file": "src/domain/security/SensitiveDataPolicy.hpp",
+      "old": "return m_confirmed && m_channel == channel",
+      "new": "return m_confirmed",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "an export authorization must not release to the clipboard"
+    },
+    {
+      "id": "M29",
+      "description": "requiresConfirmation ignores undeclared record fields",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "        if (isSensitiveValue(it.key(), it.value()))\n            return true;",
+      "new": "        if (m_sensitiveKeys.contains(it.key()))\n            return true;",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "the confirmation decision inspects the actual record"
+    },
+    {
+      "id": "M30",
+      "description": "Production GenerationContext permits insecure randomness",
+      "file": "src/domain/generator/GenerationContext.hpp",
+      "old": "bool insecureRandomPermitted() const noexcept { return m_permitInsecureRandom; }",
+      "new": "bool insecureRandomPermitted() const noexcept { return true; }",
+      "expected_failures": [
+        "tst_password_generator",
+        "tst_secure_random"
+      ],
+      "rationale": "secure-RNG enforcement must hold for ordinary contexts"
+    },
+    {
+      "id": "M31",
+      "description": "Provider built around an injected source is attested as secure",
+      "file": "src/infrastructure/random/SecureRandomProvider.cpp",
+      "old": "    : domain::IRandomProvider() // untrusted: no attestation for injected sources",
+      "new": "    : domain::IRandomProvider(domain::SecureAttestation{})",
+      "expected_failures": [
+        "tst_secure_random"
+      ],
+      "rationale": "injected sources must never produce an attested provider"
+    },
+    {
+      "id": "M32",
+      "description": "Attestation flag defaults to true for every provider",
+      "file": "src/domain/random/IRandomProvider.hpp",
+      "old": "    bool m_attestedSecure = false;",
+      "new": "    bool m_attestedSecure = true;",
+      "expected_failures": [
+        "tst_secure_random",
+        "tst_password_generator",
+        "tst_security"
+      ],
+      "rationale": "custom and test providers must be untrusted by default"
+    },
+    {
+      "id": "M33",
+      "description": "Nested objects/arrays are no longer treated as sensitive as a whole",
+      "file": "src/domain/security/SensitiveDataPolicy.cpp",
+      "old": "    return isSensitive(key) || value.isObject() || value.isArray();",
+      "new": "    return isSensitive(key);",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "whole-value handling of nested JSON"
+    },
+    {
+      "id": "M34",
+      "description": "validateRecord stops rejecting nested values",
+      "file": "src/domain/generator/GeneratorMetadata.cpp",
+      "old": "        if (it.value().isObject() || it.value().isArray())\n            result.addError(it.key(), QStringLiteral(\"nested_value\"),",
+      "new": "        if (false)\n            result.addError(it.key(), QStringLiteral(\"nested_value\"),",
+      "expected_failures": [
+        "tst_sensitive"
+      ],
+      "rationale": "flat-record contract"
+    },
+    {
+      "id": "M35",
+      "description": "TSan checker accepts the watchdog name anywhere in the report (old, loose rule)",
+      "file": "tools/check_tsan.py",
+      "old": "    watchdog_races = any(names.get(t) == WATCHDOG for t in racing_threads(report))",
+      "new": "    watchdog_races = any(WATCHDOG in line for line in report)",
+      "expected_failures": [
+        "tsan_checker_selftest"
+      ],
+      "rationale": "the watchdog must be a racing thread, not merely mentioned"
+    },
+    {
+      "id": "M36",
+      "description": "TSan checker accepts non-data-race report kinds as known",
+      "file": "tools/check_tsan.py",
+      "old": "    if is_data_race and watchdog_races:",
+      "new": "    if watchdog_races:",
+      "expected_failures": [
+        "tsan_checker_selftest"
+      ],
+      "rationale": "only plain data races can be the known class"
+    }
+  ]
+}

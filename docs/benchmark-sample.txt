@@ -1,0 +1,48 @@
+# Sample run (Slice 1.1 round 3). Intel Xeon 2.10GHz, 1 core, GCC 13.3, Qt 6.4.2, Release, fail-closed OS provider (getrandom). Measurements, not targets.
+uniformIndex(87) throughput
+SecureRandomProvider            1.8 M calls/s   (checksum 860090400)
+DeterministicRandomProvider       46.3 M calls/s   (checksum 860022311)
+
+scenario                        count    time (ms)    passwords/s
+default (24, all sets)            100         4.27          23417
+default (24, all sets)           1000        32.83          30464
+default (24, all sets)          10000       294.82          33919
+default (24, all sets)         100000      3507.98          28506
+min 2 per category (24)           100         3.16          31686
+min 2 per category (24)          1000        29.67          33708
+min 2 per category (24)         10000       315.31          31715
+min 2 per category (24)        100000      3220.15          31054
+no duplicates (24)                100         3.24          30878
+no duplicates (24)               1000        29.78          33582
+no duplicates (24)              10000       321.19          31135
+no duplicates (24)             100000      3225.14          31006
+long (128)                        100        13.88           7204
+long (128)                       1000       162.78           6143
+long (128)                      10000      1595.51           6268
+long (128)                     100000     15813.33           6324
+unique, digits only (8)           100         1.97          50743
+unique, digits only (8)          1000        18.99          52670
+unique, digits only (8)         10000       139.31          71781
+unique, digits only (8)        100000      1362.23          73409
+
+scenario                        count    time (ms)    passwords/s
+default (24, all sets)            100         1.11          89834
+default (24, all sets)           1000        10.20          97995
+default (24, all sets)          10000        94.81         105479
+default (24, all sets)         100000       701.48         142555
+min 2 per category (24)           100         0.59         170382
+min 2 per category (24)          1000         5.95         168179
+min 2 per category (24)         10000        64.08         156052
+min 2 per category (24)        100000       716.01         139662
+no duplicates (24)                100         1.06          94442
+no duplicates (24)               1000         9.41         106263
+no duplicates (24)              10000        84.87         117822
+no duplicates (24)             100000      1070.72          93395
+long (128)                        100         3.17          31554
+long (128)                       1000        31.19          32066
+long (128)                      10000       277.11          36087
+long (128)                     100000      2058.85          48571
+unique, digits only (8)           100         0.39         255260
+unique, digits only (8)          1000         3.29         304360
+unique, digits only (8)         10000        34.96         286045
+unique, digits only (8)        100000       407.54         245374
