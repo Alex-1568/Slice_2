@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "account-recommendations",
+  "version": "0.1.0",
+  "description": "Extensible synthetic account-data generator framework",
+  "dependencies": [
+    "qtbase"
+  ]
+}

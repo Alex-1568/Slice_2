@@ -1,0 +1,3 @@
+add_executable(ar_bench_generation bench_generation.cpp)
+target_link_libraries(ar_bench_generation PRIVATE ar_core ar_random ar_random_testing ar_generators)
+ar_enable_warnings(ar_bench_generation)
