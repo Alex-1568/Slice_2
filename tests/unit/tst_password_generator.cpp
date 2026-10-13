@@ -141,10 +141,8 @@ private slots:
         source.requestCancel();
         const GenerationContext context(secure, source.token());
         const auto result = PasswordGenerator().generate(passwordRequest({}, 1000), context);
-        QVERIFY(result.hasValue());
-        QCOMPARE(result.value().summary.status, CompletionStatus::Cancelled);
-        QCOMPARE(result.value().summary.produced, qsizetype{0});
-        QVERIFY(result.value().records.isEmpty());
+        QVERIFY(!result.hasValue());
+        QCOMPARE(result.error().code, GenerationError::Code::Cancelled);
     }
 
     void cancellationDuringBatchStopsPromptly()

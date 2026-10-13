@@ -27,12 +27,15 @@ public:
     /// runtime limits (those come from the GenerationContext).
     [[nodiscard]] virtual common::ValidationResult validate(const GeneratorRequest& request) const = 0;
 
-    /// Streaming primitive. Pushes `request.count` records into `sink`, checking
-    /// cancellation between records. Cancellation and sink-stop are reported through
-    /// the summary status, not as errors.
+    /// Validated streaming boundary. This method is final so implementations cannot
+    /// bypass metadata/record validation. A valid record is forwarded to the caller's
+    /// sink; an invalid record is withheld and returned as InvalidOutputRecord.
+    ///
+    /// Streaming is not transactional: valid records delivered before a later error or
+    /// cancellation cannot be rolled back. See docs/API_AUDIT.md.
     [[nodiscard]] virtual common::Result<GenerationSummary, GenerationError>
     generateInto(const GeneratorRequest& request, const GenerationContext& context,
-                 IResultSink& sink) const = 0;
+                 IResultSink& sink) const final;
 
     /// Convenience for callers that want everything in memory. On error no partial
     /// records are returned (important for sensitive data).
@@ -44,8 +47,14 @@ protected:
     IGenerator(const IGenerator&) = default;
     IGenerator& operator=(const IGenerator&) = default;
 
-    /// Checks shared by all generators: count >= 1, count <= limits, uniqueness
-    /// support, and secure-randomness policy.
+    /// Implementations produce records only through this protected hook. The public
+    /// final generateInto() wraps the sink and enforces the declared output contract.
+    [[nodiscard]] virtual common::Result<GenerationSummary, GenerationError>
+    generateIntoImpl(const GeneratorRequest& request, const GenerationContext& context,
+                     IResultSink& validatedSink) const = 0;
+
+    /// Checks shared by all generators: request id, count/limits, uniqueness support,
+    /// and secure-randomness policy. Called by the non-bypassable public boundary.
     [[nodiscard]] static common::Result<void, GenerationError>
     checkPreconditions(const GeneratorMetadata& metadata, const GeneratorRequest& request,
                        const GenerationContext& context);

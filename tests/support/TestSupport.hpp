@@ -149,12 +149,11 @@ public:
     common::ValidationResult validate(const domain::GeneratorRequest&) const override { return {}; }
 
     common::Result<domain::GenerationSummary, domain::GenerationError>
-    generateInto(const domain::GeneratorRequest& request, const domain::GenerationContext& context,
-                 domain::IResultSink& sink) const override
+    generateIntoImpl(const domain::GeneratorRequest& request, const domain::GenerationContext& context,
+                     domain::IResultSink& sink) const override
     {
+        (void)context; // Preconditions are enforced by IGenerator's public final boundary.
         using R = common::Result<domain::GenerationSummary, domain::GenerationError>;
-        if (auto pre = checkPreconditions(m_metadata, request, context); !pre)
-            return R::failure(std::move(pre).error());
         domain::GenerationSummary summary;
         for (qsizetype i = 0; i < request.count; ++i) {
             QJsonObject record;

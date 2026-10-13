@@ -30,6 +30,15 @@ struct RegistryError
     common::ValidationResult validation;
 };
 
+/// Immutable metadata snapshot paired with its registered implementation. Used by the runtime
+/// plugin loader to stage and atomically publish a known, validated set without re-querying
+/// plugin-controlled virtual metadata between validation and commit.
+struct GeneratorRegistration
+{
+    GeneratorMetadata metadata;
+    std::shared_ptr<const IGenerator> generator;
+};
+
 /// Thread-safe registry of generators.
 ///
 /// `find` returns shared ownership so a worker that is mid-generation keeps its
@@ -45,6 +54,12 @@ public:
     [[nodiscard]] common::Result<void, RegistryError>
     registerGenerator(std::unique_ptr<IGenerator> generator);
 
+    /// Atomically registers an already-created set of generators. All metadata and duplicate
+    /// IDs are checked before the registry changes. Used by the runtime plugin loader so a plugin
+    /// cannot leave a partially registered set behind if one generator conflicts.
+    [[nodiscard]] common::Result<void, RegistryError>
+    registerGeneratorsAtomically(const QList<GeneratorRegistration>& registrations);
+
     bool unregisterGenerator(const QString& id);
 
     [[nodiscard]] std::shared_ptr<const IGenerator> find(const QString& id) const;
@@ -52,6 +67,7 @@ public:
 
     /// Registration order (stable); the GUI groups by category itself.
     [[nodiscard]] QList<GeneratorMetadata> list() const;
+    [[nodiscard]] QList<GeneratorRegistration> registrationSnapshot() const;
     [[nodiscard]] qsizetype size() const;
 
 private:

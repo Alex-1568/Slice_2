@@ -27,11 +27,11 @@ public:
     [[nodiscard]] common::ValidationResult
     validate(const domain::GeneratorRequest& request) const override;
 
-    [[nodiscard]] common::Result<domain::GenerationSummary, domain::GenerationError>
-    generateInto(const domain::GeneratorRequest& request, const domain::GenerationContext& context,
-                 domain::IResultSink& sink) const override;
-
 private:
+    [[nodiscard]] common::Result<domain::GenerationSummary, domain::GenerationError>
+    generateIntoImpl(const domain::GeneratorRequest& request, const domain::GenerationContext& context,
+                     domain::IResultSink& validatedSink) const override;
+
     struct Prepared
     {
         PasswordConfiguration config;

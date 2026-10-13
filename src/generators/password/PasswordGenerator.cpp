@@ -123,14 +123,11 @@ ValidationResult PasswordGenerator::validate(const domain::GeneratorRequest& req
 }
 
 Result<GenerationSummary, GenerationError>
-PasswordGenerator::generateInto(const domain::GeneratorRequest& request,
-                                const domain::GenerationContext& context,
-                                domain::IResultSink& sink) const
+PasswordGenerator::generateIntoImpl(const domain::GeneratorRequest& request,
+                                    const domain::GenerationContext& context,
+                                    domain::IResultSink& sink) const
 {
     using SummaryResult = Result<GenerationSummary, GenerationError>;
-
-    if (auto precondition = checkPreconditions(metadata(), request, context); !precondition)
-        return SummaryResult::failure(std::move(precondition).error());
 
     auto prepared = prepare(request, context.limits());
     if (!prepared)

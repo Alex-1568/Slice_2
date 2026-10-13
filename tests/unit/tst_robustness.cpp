@@ -383,10 +383,8 @@ private slots:
         });
         const auto result = PasswordGenerator().generate(passwordRequest({{"length", 64}}, 1'000'000), context);
         canceller.join();
-        QVERIFY(result.hasValue());
-        QCOMPARE(result.value().summary.status, domain::CompletionStatus::Cancelled);
-        QVERIFY(result.value().summary.produced < 1'000'000);
-        QCOMPARE(result.value().records.size(), result.value().summary.produced);
+        QVERIFY(!result.hasValue());
+        QCOMPARE(result.error().code, domain::GenerationError::Code::Cancelled);
     }
 
     void cancellationDoesNotLeakIntoOtherRuns()
@@ -395,7 +393,8 @@ private slots:
         domain::CancellationSource cancelled;
         cancelled.requestCancel();
         const auto stopped = PasswordGenerator().generate(passwordRequest({}, 10), GenerationContext(secure, cancelled.token()));
-        QCOMPARE(stopped.value().summary.status, domain::CompletionStatus::Cancelled);
+        QVERIFY(!stopped.hasValue());
+        QCOMPARE(stopped.error().code, domain::GenerationError::Code::Cancelled);
         const auto fresh = PasswordGenerator().generate(passwordRequest({}, 10), GenerationContext(secure));
         QCOMPARE(fresh.value().summary.status, domain::CompletionStatus::Completed);
     }

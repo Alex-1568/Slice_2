@@ -74,8 +74,12 @@ public:
 protected:
     IRandomProvider() = default;                                         ///< untrusted (the default)
     explicit IRandomProvider(SecureAttestation&&) noexcept : m_attestedSecure(true) {}
-    IRandomProvider(const IRandomProvider&) = default;
-    IRandomProvider& operator=(const IRandomProvider&) = default;
+    // Attestation is bound to this exact object constructed by the trusted production path.
+    // Copying/moving the base subobject could let an untrusted derived provider inherit it.
+    IRandomProvider(const IRandomProvider&) = delete;
+    IRandomProvider& operator=(const IRandomProvider&) = delete;
+    IRandomProvider(IRandomProvider&&) = delete;
+    IRandomProvider& operator=(IRandomProvider&&) = delete;
 
 private:
     bool m_attestedSecure = false;

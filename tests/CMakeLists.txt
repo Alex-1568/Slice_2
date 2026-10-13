@@ -2,7 +2,7 @@ set(CMAKE_AUTOMOC ON)
 
 add_library(ar_test_support INTERFACE)
 target_include_directories(ar_test_support INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/support")
-target_link_libraries(ar_test_support INTERFACE ar_core ar_random ar_random_testing ar_generators Qt6::Test Threads::Threads)
+target_link_libraries(ar_test_support INTERFACE ar_core ar_random ar_random_testing ar_generators ar_identity_generators Qt6::Test Threads::Threads)
 
 # ar_add_test(<name> <label>...) -> tests/unit/<name>.cpp
 function(ar_add_test name)
@@ -27,6 +27,9 @@ ar_add_test(tst_security security)
 ar_add_test(tst_entropy_semantics unit)
 ar_add_test(tst_robustness robustness)
 ar_add_test(tst_plugin_boundary unit)
+ar_add_test(tst_generator_boundary integration security)
+ar_add_test(tst_template_engine unit security)
+ar_add_test(tst_identity_generators integration property security)
 
 # Helper process for real-syscall fault injection (Linux x86-64; exits 77 elsewhere).
 add_executable(seccomp_getrandom_probe fixtures/seccomp_getrandom_probe.cpp)
@@ -41,6 +44,20 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_FOUND)
     add_test(NAME tsan_checker_selftest COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/check_tsan.py" --self-test)
     set_tests_properties(tsan_checker_selftest PROPERTIES LABELS "tooling")
+
+    # Compiler-negative probes ensure untrusted subclasses cannot copy the IRandomProvider base.
+    add_test(NAME irandom_provider_copy_ctor_boundary
+        COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/expect_compile_failure.py"
+                --compiler "${CMAKE_CXX_COMPILER}"
+                --source "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/irandom_provider_copy_ctor_attack.cpp"
+                --include-dir "${PROJECT_SOURCE_DIR}/src")
+    add_test(NAME irandom_provider_copy_assign_boundary
+        COMMAND ${Python3_EXECUTABLE} "${PROJECT_SOURCE_DIR}/tools/expect_compile_failure.py"
+                --compiler "${CMAKE_CXX_COMPILER}"
+                --source "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/irandom_provider_copy_assign_attack.cpp"
+                --include-dir "${PROJECT_SOURCE_DIR}/src")
+    set_tests_properties(irandom_provider_copy_ctor_boundary irandom_provider_copy_assign_boundary
+        PROPERTIES LABELS "security;compile-fail")
 endif()
 
 # Plain (non-QtTest) executable so ThreadSanitizer sees only project + Qt Core code,

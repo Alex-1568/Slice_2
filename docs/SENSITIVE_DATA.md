@@ -7,10 +7,13 @@ The policy decides; it performs no I/O, shows no dialogs and wipes nothing.
 
 ## Record shape contract (decided before Slice 2)
 
-* **Records are flat.** Every output field holds a **scalar** JSON value (string, number, boolean, null).
-  Nested objects and arrays are *not* part of the contract. `domain::validateRecord(metadata, record)`
-  checks that every key is declared and every value is a scalar; every generator's test suite must call
-  it on real output (the password tests do).
+* **Records are flat.** Every declared output field must be present and hold a **scalar** JSON value
+  (string, number, boolean, null). Nested objects and arrays are *not* part of the contract.
+  `domain::validateRecord(metadata, record)` checks required declared keys, rejects undeclared keys,
+  and rejects object/array values. The public virtual-final `IGenerator::generateInto()` boundary runs
+  this check on every emitted record before forwarding it to any downstream sink, for both batch and
+  streaming calls; generators cannot override that boundary and instead implement `generateIntoImpl()`.
+  Boundary regression tests exercise actual batch and streaming generation, not just the validator in isolation.
 * **Sensitivity applies per top-level key to the whole value.** The policy never recurses: names of nested
   keys are irrelevant, nested keys cannot be declared sensitive individually, and no future generator may
   assume that sanitisation is recursive. A generator that needs partial sensitivity must flatten the data
@@ -51,7 +54,9 @@ a contract on the future UI layer and is not enforced by the library.
 
 Behavioural guarantees that **are** tested: the password generator declares `password` as
 sensitive; generated passwords do not survive log or persistence sanitisation in a 50-record
-check; a failed generation returns no partial records.
+check; batch generation returns no partial records after a generation error, invalid output record,
+or cancellation. Streaming is not transactional: valid earlier rows may already have reached the sink
+when a later record fails validation or generation is cancelled; the framework cannot roll them back.
 
 ## What is explicitly NOT promised
 

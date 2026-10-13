@@ -7,6 +7,7 @@
 #include "domain/generator/GeneratorRegistry.hpp"
 #include "domain/security/SensitiveDataPolicy.hpp"
 #include "generators/password/PasswordGenerator.hpp"
+#include "generators/identity/registerIdentityGenerators.hpp"
 #include "infrastructure/random/SecureRandomProvider.hpp"
 
 #include <QJsonObject>
@@ -48,6 +49,12 @@ int main(int argc, char** argv)
     if (auto registered = registry.registerGenerator(std::make_unique<generators::password::PasswordGenerator>());
         !registered) {
         std::fprintf(stderr, "registration failed: %s\n", registered.error().message.toStdString().c_str());
+        return 1;
+    }
+
+    if (auto registered = generators::identity::registerIdentityGenerators(registry); !registered) {
+        std::fprintf(stderr, "identity generator registration failed: %s\n",
+                     registered.error().message.toStdString().c_str());
         return 1;
     }
 

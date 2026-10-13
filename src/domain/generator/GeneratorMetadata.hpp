@@ -39,8 +39,9 @@ struct GeneratorMetadata
 };
 
 /// Checks one generated record against the generator's declared output fields and the flat-record
-/// contract (see SensitiveDataPolicy.hpp): every key must be declared (`undeclared_field`) and every
-/// value must be a scalar (`nested_value`). Intended for generator tests and debug assertions.
+/// contract: every declared field must be present (`missing_field`), no extra key is permitted
+/// (`undeclared_field`), and each value must be scalar (`nested_value`). Enforced by IGenerator's
+/// public generation boundary for batch and streaming calls.
 [[nodiscard]] common::ValidationResult validateRecord(const GeneratorMetadata& metadata, const QJsonObject& record);
 
 /// Structural validation used by the registry (id/version format, unique keys,

@@ -22,7 +22,10 @@ Consequences, stated plainly:
 * Because of the above, dependency setup is **not** described anywhere in this repository as
   "fully reproducible".
 
-## Toolchains actually used (see `docs/VERIFICATION.md` for results)
+## Toolchains used in the prior round-3 baseline (not the current round-4 tree)
+
+See `docs/VERIFICATION.md` for the current review environment. These previous versions are historical
+context only and their green build claims do not cover round-4 changes.
 
 | Component | Version |
 |---|---|
@@ -49,3 +52,8 @@ version and the compiler in `docs/VERIFICATION.md`, and only then claim reproduc
 
 `CMakeLists.txt` requests `find_package(Qt6 6.4 ...)`: 6.4 is the oldest version that has
 been compiled and tested, not a statement that nothing older works.
+
+
+## GUI/runtime plugin integration requirements
+
+The current CMake defaults also request Qt 6 Gui, Widgets, Concurrent, and Test (when tests are enabled). The Qt SDK currently available in the source's historical verification report was 6.4.2, but the GUI and runtime plugin integration were added after that checkpoint and have **not been compiled in the current sandbox**. The `ar_core` target is now a shared library by design so host and native plugins use one registry/type implementation rather than embedding independent static copies. Native plugins must use a compatible compiler, C++ runtime, Qt SDK, and `ar_core` ABI. Qt runtime deployment (for example `windeployqt`/`macdeployqt` or platform package/AppImage setup) has not been verified here.

@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.abspath(os.path.join(HERE, "..", ".."))
-COPY = ["CMakeLists.txt", "cmake", "src", "testsupport", "tests", "tools", "benchmarks"]
+COPY = ["CMakeLists.txt", "cmake", "src", "app", "plugins", "resources", "testsupport", "tests", "tools", "benchmarks"]
 
 
 def run(cmd, cwd, check=False):

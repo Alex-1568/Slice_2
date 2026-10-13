@@ -1,8 +1,6 @@
 # Slice 1 / 1.1 — design notes
 
-Status: Slice 1 architecture approved; **Slice 1.1 (hardening and verification) is the current
-state**. Slice 2 has not been started. Evidence for every claim of "tested" lives in
-`docs/VERIFICATION.md`; this file does not repeat numbers.
+Status: Slice 1 architecture is retained; Slice 1.1 contains the hardening corrections; Slice 2 identity generators, the metadata-driven Qt Widgets GUI, and opt-in runtime plugin integration are present in the current source tree. Full Qt build/test verification is pending because the current sandbox lacks Qt 6 development files. The historical Slice 1.1 checkpoint is in `docs/VERIFICATION.md`; core Slice 2 and GUI/plugin verification records are in `docs/SLICE2_VERIFICATION.md` and `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md`.
 
 ## Corrections to the first Slice 1 report
 
@@ -18,11 +16,12 @@ state**. Slice 2 has not been started. Evidence for every claim of "tested" live
 ```
 caller ──> GeneratorRegistry.find("password") ──> shared_ptr<const IGenerator>
 caller ──> GenerationContext{ IRandomProvider&, CancellationToken, ApplicationLimits }
-IGenerator::generate(request, ctx)            -- convenience, collects in memory
-   └─> generateInto(request, ctx, IResultSink&)   -- streaming primitive
-         ├─ checkPreconditions (count, batch limit, unique support, secure-RNG policy)
-         ├─ prepare(request, ctx.limits): schema -> parse -> pool plan -> semantic validation -> entropy
-         └─ per record: cancel check -> generatePasswordCodePoints -> sink.accept
+IGenerator::generate(request, ctx)            -- batch convenience; no partial records on error/cancel
+   └─> generateInto(request, ctx, IResultSink&) -- public virtual-final streaming boundary
+         ├─ check request/metadata/limits/security policy
+         ├─ ValidatingSink -> validateRecord for every record before forwarding
+         └─> generateIntoImpl(...)               -- generator-specific hook
+               └─ per record: cancel check -> generatePasswordCodePoints -> validatedSink.accept
 SensitiveDataPolicy.sanitize(record, channel)  -- see docs/SENSITIVE_DATA.md
 ```
 
@@ -61,7 +60,7 @@ low-entropy OS source, nor about guessing attacks that exploit how a human *uses
 | Spec | Implemented | Reason |
 |---|---|---|
 | `uniformIndex` virtual in `IRandomProvider` | non-virtual, built on pure-virtual `nextUInt64()` | one audited rejection-sampling implementation |
-| `generate()` only | `generateInto(…, sink)` + non-virtual `generate` | streaming without complicating the single-result call |
+| `generate()` only | final `generateInto(…, sink)` boundary + protected `generateIntoImpl` + batch `generate` | one non-bypassable validation boundary for both streaming and in-memory generation |
 | `GenerationContext&` | `const GenerationContext&` | non-owning service bundle |
 | cancellation "C++20 mechanism" | project-owned `CancellationToken/Source` | libc++ lacks `std::stop_token` without `-fexperimental-library` (verified) |
 | `configurationSchema` as `QJsonObject` | typed `ConfigurationSchema` + `toJson()` | type-safe generic validation |
@@ -70,7 +69,8 @@ low-entropy OS source, nor about guessing attacks that exploit how a human *uses
 | `GeneratorRequest{id, params, count}` | + `unique` | batch uniqueness is request-level |
 | metadata | + `outputFields`, `requiresSecureRandom` | drives policy and RNG enforcement generically |
 | `DeterministicRandomProvider` next to the secure one | separate library `ar_random_testing` | keep it out of production composition |
-| `IGeneratorPlugin::registerGenerators` → `void` | → `Result<void, RegistryError>` + `kGeneratorApiVersion` | failure isolation and compatibility check; still **no loader** |
+| `IGeneratorPlugin::registerGenerators` → `void` | → `Result<void, RegistryError>` + `kGeneratorApiVersion` | failure isolation and compatibility check; runtime loader added in the GUI/plugin integration layer; see `docs/PLUGIN_DEVELOPMENT.md` |
+| Generator implementation hook | public overridable `generateInto()` → public virtual-final boundary + protected `generateIntoImpl()` | central record validation cannot be bypassed by a normal generator implementation; API version bumped to 2 |
 | `vcpkg-configuration.json` | present, baseline pinned to a real SHA | see `docs/DEPENDENCIES.md` (not fully reproducible) |
 
 ## Security model
@@ -81,7 +81,9 @@ low-entropy OS source, nor about guessing attacks that exploit how a human *uses
   Secure generators reject non-CSPRNG providers; the only way to build a context that accepts an
   insecure provider is a helper in `testsupport/`, whose include path only `ar_random_testing`
   exports, so production targets cannot compile it.
-* A failing source yields `RandomSourceFailure` and no records.
+* A failing source yields `RandomSourceFailure` and no records through the batch API.
+* The public virtual-final `IGenerator::generateInto()` validates metadata and every emitted record (all declared fields present; no unknown keys; scalar values only) before forwarding it to the downstream sink. Invalid records are withheld and produce `InvalidOutputRecord`.
+* Batch `generate()` returns a `Cancelled` error and no records if cancellation occurs after partial work. Streaming callers may already have received earlier valid records before cancellation or a later invalid record; streaming is not transactional and provides no rollback.
 * Resource ceilings come from `ApplicationLimits` (`maxBatchSize`, `maxStringLength`,
   `maxParameterCount`, `maxOutputLength`, `maxUniquenessAttempts`); limits can only tighten
   generator-intrinsic bounds. Retry loops are bounded.
@@ -107,4 +109,4 @@ low-entropy OS source, nor about guessing attacks that exploit how a human *uses
 
 ## Next
 
-Slice 2 only after the Slice 1.1 report is reviewed and approved.
+Slice 2 generators are described in `docs/SLICE2.md`. The GUI and native runtime plugin layer are covered by `docs/GUI.md` and `docs/PLUGIN_DEVELOPMENT.md`. Their addition is not the same as a full build/test approval; see `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md`.

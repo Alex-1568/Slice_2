@@ -1,77 +1,59 @@
-<<<<<<< HEAD
-# Account Recommendations — Slice 1 (core + PasswordGenerator)
+# Account Recommendations — C++20 / Qt 6
 
-Extensible synthetic account-data generator framework. **Slice 1** contains the
-GUI-free core: generator contract, registry, randomness boundary, sensitive-data
-policy, and a complete `PasswordGenerator`, with tests and benchmarks.
-There is intentionally **no GUI and no runtime plugin loader** yet.
+**Source version:** 0.2.0 (Slice 2 core + Qt Widgets GUI + opt-in runtime plugin integration).
+
+Extensible synthetic account-data generator framework and desktop app. The shared core owns the generator contracts, registry, configuration schema, cancellation model, sensitive-data policy, and plugin API. Built-in generators include the configurable password generator and six synthetic identity generators: username, display name, nickname, email-like identifier, account ID, and profile metadata.
+
+The Qt Widgets app (`account_recommendations`) builds its generator navigation and configuration form from registry metadata. Generation runs asynchronously; sensitive values are masked by default; copy and export use channel-specific confirmation and the sensitive-data policy. It supports TXT/TSV, CSV, and JSON output, Light/Dark/System palette actions, and an opt-in runtime plugin loader.
+
+Email-like identifiers use reserved/example domains only and perform no network lookups. Name datasets are local. The application does not implement account registration, verification/CAPTCHA bypass, spam, credential stuffing, account takeover, or access to real accounts.
 
 ## Prerequisites
 
-* C++20 compiler. Compiled and tested: GCC 13.3 and Clang 18 on Ubuntu 24.04 (see `docs/VERIFICATION.md`).
-  **Not** verified: MSVC, Apple Clang (see `docs/PORTABILITY.md`).
-* CMake >= 3.21, Ninja (recommended)
-* Qt 6 with **Core** and **Test**. Tested with 6.4.2 only (`find_package(Qt6 6.4 ...)`).
+- C++20 compiler and CMake >= 3.21; Ninja recommended.
+- Qt 6.4 or newer development packages: Core, Gui, Widgets, Concurrent, Test.
+- Runtime plugins must be built against a compatible Qt/C++ ABI and the host's shared `ar_core` library.
 
-Ubuntu/Debian: `sudo apt install build-essential cmake ninja-build qt6-base-dev`
+On Debian/Ubuntu, the main Qt package is commonly provided by `qt6-base-dev`.
 
 ## Build, test, run
 
 ```sh
-cmake --preset dev-debug            # or: cmake -S . -B build/dev-debug -G Ninja
-cmake --build --preset dev-debug
-ctest --preset dev-debug            # unit, integration, property, security, robustness suites
+cmake --preset dev-debug
+cmake --build --preset dev-debug --parallel 2
+ctest --preset dev-debug --output-on-failure
 
-./build/dev-debug/tools/cli_demo/ar_cli_demo --count 3 --length 24 --reveal
+# GUI executable (path may differ by generator/platform)
+./build/dev-debug/src/gui/account_recommendations
+
+# Developer CLI
+./build/dev-debug/tools/cli_demo/ar_cli_demo --count 3 --length 24
 ```
 
-| Preset | Purpose |
-|---|---|
-| `dev-debug` | everyday development |
-| `dev-release` | optimised + benchmarks (`build/dev-release/benchmarks/ar_bench_generation`) |
-| `ci-release` | `-Werror` on project targets |
-| `sanitizers` | AddressSanitizer + UBSan |
-| `tsan` | ThreadSanitizer, runs the `concurrency` label (see `docs/VERIFICATION.md` for how to read TSan output) |
-| `vcpkg-release` | uses `VCPKG_ROOT` toolchain + `vcpkg.json`; baseline pinned, **never executed** (`docs/DEPENDENCIES.md`) |
+The example native plugin is built at `build/dev-debug/plugins/` (actual preset output path follows the configured binary directory). The GUI does not scan or load plugins automatically. Use **Plugins → Load native plugin…**, inspect the warning, and confirm only if you trust the selected code.
 
-`tools/verify.sh <step>` runs every verification step (`debug release sanitizers tsan selftest clang libcxx benchmark`); `selftest` proves the TSan checks can fail.
-`python3 tools/mutation/run_mutations.py` re-runs the mutation experiment on a scratch copy of the tree.
+CMake options:
 
-CMake options: `AR_BUILD_TESTS`, `AR_BUILD_BENCHMARKS`, `AR_BUILD_TOOLS`,
-`AR_WARNINGS_AS_ERRORS`, `AR_ENABLE_SANITIZERS`, `AR_ENABLE_TSAN`.
+- `AR_BUILD_GUI=ON`: Qt Widgets desktop application and smoke test.
+- `AR_BUILD_RUNTIME_PLUGINS=ON`: opt-in `QPluginLoader` manager.
+- `AR_BUILD_EXAMPLE_PLUGIN=ON`: example native module and runtime integration test.
+- `AR_BUILD_TESTS=ON`: unit/integration/security/property/robustness/UI/plugin tests.
+- `AR_BUILD_BENCHMARKS=OFF`, `AR_BUILD_TOOLS=ON`, `AR_WARNINGS_AS_ERRORS=OFF`.
 
-## Layout
+## Important trust boundaries
 
-```
-src/common/        Result<T,E>, ValidationResult, ApplicationLimits, SecureWipe
-src/domain/        IGenerator, GenerationContext, metadata/schema, registry,
-                   IRandomProvider, SensitiveDataPolicy      (Qt Core only)
-src/generators/    password/  (links ar_core only; never sees random implementations)
-src/domain/plugin/ IGeneratorPlugin boundary (NO runtime loader)
-src/infrastructure/random/   SecureRandomProvider + OS entropy backends (production, fail-closed)
-testsupport/testing/        DeterministicRandomProvider, insecure-context helper (include path exported only by ar_random_testing)
-tests/ benchmarks/ tools/{cli_demo,mutation,verify.sh} docs/
-```
+Native plugins are not sandboxed. They execute with the app's privileges, can read or modify files and access the network, and can crash/corrupt the host. Loading is disabled by default and the GUI prompts before each load. The loader checks the Qt plugin IID and generator API version, stages generator registration, and commits the generator set atomically. Modules are intentionally kept resident until process exit; hot-unload is not offered because active jobs may hold plugin-defined vtables.
 
-Libraries: `ar_generators -> ar_core`, `ar_random -> ar_core`, `ar_random_testing -> ar_core`.
-Generators link neither RNG library, so a generator cannot construct a concrete RNG; production
-targets must not link `ar_random_testing` (enforced by a test).
+Password and other sensitive values are masked by default. The GUI applies `SensitiveDataPolicy` on display, clipboard, and export. Clipboard clearing after 30 seconds is best-effort, not a guarantee of erasure from other processes or OS history. No generated results or passwords are saved automatically.
 
-## Adding a generator
+## Documentation
 
-1. Implement `domain::IGenerator` (`metadata`, `validate`, `generateInto`).
-2. Declare `GeneratorMetadata`: id, schema (`FieldSpec`s), `outputFields` (mark secrets
-   `sensitive`), `requiresSecureRandom` if applicable.
-3. Call `checkPreconditions(...)` first in `generateInto`; honour `context.isCancelled()`.
-4. `registry.registerGenerator(std::make_unique<MyGenerator>())`.
-5. Add tests. No framework file needs to change.
+- `docs/SLICE1.md`, `docs/SLICE2.md` — core and generator contracts.
+- `docs/GUI.md` — dynamic forms, async generation, sensitive output, and export.
+- `docs/PLUGIN_DEVELOPMENT.md` — plugin API v3, build requirements, trust model, and example plugin.
+- `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md` — verification actually available in the current environment.
+- `docs/VERIFICATION.md`, `docs/SLICE2_VERIFICATION.md`, `docs/SENSITIVE_DATA.md`, `docs/RANDOMNESS_AUDIT.md`, `docs/API_AUDIT.md`, `docs/PORTABILITY.md`, `docs/DEPENDENCIES.md`.
 
-## Documentation map
+## Current verification caveat
 
-`docs/SLICE1.md` design and corrections - `docs/VERIFICATION.md` commands and evidence -
-`docs/SENSITIVE_DATA.md` - `docs/RANDOMNESS_AUDIT.md` - `docs/API_AUDIT.md` - `docs/PORTABILITY.md` - `docs/DEPENDENCIES.md` -
-`docs/mutation-report.md`.
-=======
-# Slice_2
-AR_Slice2 vr3
->>>>>>> fb6299deb583b6a223b795880e6f4d9e86c399d6
+The current sandbox does not contain Qt 6 development files. `cmake --preset dev-debug` has been attempted and stops at `find_package(Qt6 ...)`. Consequently the GUI and runtime plugin C++ targets, full CTest suite, sanitizers, and mutation kill counts have **not** been claimed as passing here. Run the commands above on a Qt-enabled runner before treating this source snapshot as compile/runtime verified.

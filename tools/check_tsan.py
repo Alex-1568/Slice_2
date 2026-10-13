@@ -14,7 +14,7 @@ Classes of report
   PROJECT      a stack frame lies in project code (main executable, project path, or the
                account_recommendations namespace)            -> always a failure
   KNOWN-QTTEST no project frame AND the racing threads include Qt Test's 'QtTest Watchdog'
-               thread (teardown of Qt Test in an uninstrumented Qt)  -> accepted in qttest mode, printed
+               thread AND the stacks match a known Qt Test teardown signature -> accepted in qttest mode, printed
   UNEXPECTED   anything else                                  -> failure
 A 'FATAL: ThreadSanitizer' line (TSan could not run) is always a failure.
 Exit status: 0 = verification passes, 1 = it does not, 2 = usage error.
@@ -48,6 +48,14 @@ ACCESS = re.compile(
     r"^\s+(?:Previous )?(?:[Aa]tomic )?(?:[Ww]rite|[Rr]ead) of size \d+ at 0x[0-9a-fA-F]+ by (main thread|thread (T\d+))")
 THREAD_LINE = re.compile(r"^\s+Thread (T\d+)(?: '([^']*)')? \(")
 WATCHDOG = "QtTest Watchdog"
+# Conservative signature from the observed Qt 6.4.2 / Qt Test teardown report.
+# Do not widen this to a generic pthread wait or to the watchdog's name alone.
+KNOWN_QTTEST_STACK_FRAMES = (
+    "QWaitCondition::~QWaitCondition()",
+    "QTest::qRun()",
+    "libQt6Core",
+    "libQt6Test",
+)
 
 
 def racing_threads(report):
@@ -65,10 +73,30 @@ def thread_names(report):
     return {m.group(1): m.group(2) for m in map(THREAD_LINE.match, report) if m and m.group(2)}
 
 
+def has_known_qttest_teardown_signature(report):
+    """Require the known Qt 6 teardown frame sequence, not merely a wait call.
+
+    This intentionally fails closed when a toolchain/Qt version emits a different stack;
+    the signature must be re-reviewed against an actual raw report before being extended.
+    """
+    frames = [FRAME.match(line).group(1) for line in report if FRAME.match(line)]
+    # Keep symbol and module tied to the SAME stack frame. Merely seeing a Qt Core module
+    # and a QWaitCondition-like name somewhere else in the report is not enough evidence.
+    core_teardown = any(
+        "QWaitCondition::~QWaitCondition()" in frame and "libQt6Core" in frame
+        for frame in frames
+    )
+    test_runner = any(
+        "QTest::qRun()" in frame and "libQt6Test" in frame
+        for frame in frames
+    )
+    return core_teardown and test_runner
+
+
 def classify(report, project_root):
-    """PROJECT / KNOWN-QTTEST / UNEXPECTED. KNOWN-QTTEST is deliberately narrow: a plain
-    data race, no project frame, and Qt Test's watchdog thread is one of the threads that
-    actually performed the racing accesses."""
+    """PROJECT / KNOWN-QTTEST / UNEXPECTED. The environmental classification requires a
+    parseable data race, the watchdog as a racing party, no project frame, and a known
+    empirical teardown-stack signature."""
     project_frames = []
     for line in report:
         m = FRAME.match(line)
@@ -86,7 +114,7 @@ def classify(report, project_root):
     is_data_race = report[0].startswith("WARNING: ThreadSanitizer: data race")
     names = thread_names(report)
     watchdog_races = any(names.get(t) == WATCHDOG for t in racing_threads(report))
-    if is_data_race and watchdog_races:
+    if is_data_race and watchdog_races and has_known_qttest_teardown_signature(report):
         return "KNOWN-QTTEST", []
     return "UNEXPECTED", []
 
@@ -149,6 +177,15 @@ _PROJECT = _KNOWN.replace("#2 QTest::qRun() <null> (libQt6Test.so.6+0x1)",
                           "#2 account_recommendations::domain::GeneratorRegistry::find x.cpp:10 (tst_registry+0x10)")
 _UNEXPECTED = _KNOWN.replace("'QtTest Watchdog'", "'worker'")
 _PATH = _KNOWN.replace("#2 QTest::qRun() <null> (libQt6Test.so.6+0x1)", "#2 f /work/proj/src/a.cpp:1 (libfoo.so+0x1)")
+_SPLIT_SIGNATURE = (_KNOWN
+    .replace("QWaitCondition::~QWaitCondition() <null> (libQt6Core.so.6+0x27696b)",
+             "QWaitCondition::~QWaitCondition() <null> (libexample.so+0x27696b)")
+    .replace("QTest::qRun() <null> (libQt6Test.so.6+0x1)",
+             "QTest::qRun() <null> (libexample.so+0x1)")
+    .replace("SUMMARY: ThreadSanitizer:",
+             "#3 unrelated_core_frame <null> (libQt6Core.so+0x1)\n"
+             "    #4 unrelated_test_frame <null> (libQt6Test.so+0x1)\n"
+             "SUMMARY: ThreadSanitizer:"))
 # Race between two OTHER threads; the watchdog's name appears only in thread-creation annotations.
 _TWO_OTHERS = """WARNING: ThreadSanitizer: data race (pid=1)
   Write of size 4 at 0x1 by thread T2:
@@ -167,6 +204,8 @@ SUMMARY: ThreadSanitizer: data race in pthread_cond_wait
 _CREATOR_ONLY = _TWO_OTHERS.replace("by thread T3:", "by main thread:")
 # The watchdog is a racing party (the other party is a non-main thread): still the known class.
 _WATCHDOG_VS_WORKER = _TWO_OTHERS.replace("by thread T2:", "by thread T1:")
+# Watchdog is a racer, but both conflicting-access stacks are generic pthread waits.
+_WATCHDOG_GENERIC_STACK = _WATCHDOG_VS_WORKER
 # Not a data race at all, although the watchdog is named (e.g. a leaked thread).
 _OTHER_KIND = _KNOWN.replace("data race (pid=1)", "thread leak (pid=1)")
 # A data race whose access headers cannot be parsed: nothing proves who raced.
@@ -190,7 +229,9 @@ def self_test():
         ("unexpected report without the watchdog thread", _UNEXPECTED + _TOTALS, "qttest", TSAN_EXIT, False),
         ("race between two OTHER threads; watchdog named only in thread-creation annotations", _TWO_OTHERS + _TOTALS, "qttest", TSAN_EXIT, False),
         ("watchdog only CREATED one of the racing threads", _CREATOR_ONLY + _TOTALS, "qttest", TSAN_EXIT, False),
-        ("watchdog IS one of the two racing threads (other is a worker)", _WATCHDOG_VS_WORKER + _TOTALS, "qttest", TSAN_EXIT, True),
+        ("watchdog IS one of the racing threads and teardown signature is known", _KNOWN + _TOTALS, "qttest", TSAN_EXIT, True),
+        ("watchdog races with a worker but only generic stack is present", _WATCHDOG_GENERIC_STACK + _TOTALS, "qttest", TSAN_EXIT, False),
+        ("Qt function names and Qt module names split across unrelated frames", _SPLIT_SIGNATURE + _TOTALS, "qttest", TSAN_EXIT, False),
         ("watchdog named but the report is not a data race", _OTHER_KIND + _TOTALS, "qttest", TSAN_EXIT, False),
         ("data race with unparseable access headers (cannot prove the watchdog raced)", _NO_ACCESS + _TOTALS, "qttest", TSAN_EXIT, False),
         ("failing Qt Test totals", "Totals: 4 passed, 1 failed, 0 skipped\n", "qttest", 1, False),
@@ -210,7 +251,9 @@ def self_test():
               f" (expected {'pass' if expected else 'fail'})")
     class_cases = [
         ("known watchdog race", _KNOWN, "KNOWN-QTTEST"),
-        ("watchdog vs worker", _WATCHDOG_VS_WORKER, "KNOWN-QTTEST"),
+        ("watchdog with known Qt Test teardown signature", _KNOWN, "KNOWN-QTTEST"),
+        ("watchdog vs worker with only generic stack", _WATCHDOG_GENERIC_STACK, "UNEXPECTED"),
+        ("Qt function names and module names split across unrelated frames", _SPLIT_SIGNATURE, "UNEXPECTED"),
         ("two other threads", _TWO_OTHERS, "UNEXPECTED"),
         ("watchdog only created a racer", _CREATOR_ONLY, "UNEXPECTED"),
         ("other report kind", _OTHER_KIND, "UNEXPECTED"),

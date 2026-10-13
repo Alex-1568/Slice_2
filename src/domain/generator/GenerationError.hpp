@@ -21,13 +21,15 @@ struct GenerationError
         InsecureRandomSource,
         RandomSourceFailure,
         UniquenessExhausted,
+        InvalidOutputRecord,
+        Cancelled,
         ConstraintViolation,
         Internal
     };
 
     Code code = Code::Internal;
     QString message;
-    common::ValidationResult validation; ///< populated for InvalidConfiguration
+    common::ValidationResult validation; ///< populated for InvalidConfiguration / InvalidOutputRecord
 
     [[nodiscard]] static GenerationError invalidRequest(QString message)
     {
@@ -62,6 +64,19 @@ struct GenerationError
                                "configuration. Allow more characters or reduce the count."),
                 {}};
     }
+    [[nodiscard]] static GenerationError invalidOutputRecord(common::ValidationResult issues)
+    {
+        // Keep the top-level message generic; diagnostics contain field names, never values.
+        return {Code::InvalidOutputRecord,
+                QStringLiteral("The generator emitted a record that violates its declared output contract."),
+                std::move(issues)};
+    }
+    [[nodiscard]] static GenerationError cancelled()
+    {
+        return {Code::Cancelled,
+                QStringLiteral("Batch generation was cancelled; no partial result set is returned."),
+                {}};
+    }
     [[nodiscard]] static GenerationError constraintViolation(QString message)
     {
         return {Code::ConstraintViolation, std::move(message), {}};
@@ -81,6 +96,8 @@ struct GenerationError
     case GenerationError::Code::InsecureRandomSource: return QLatin1String("insecure_random_source");
     case GenerationError::Code::RandomSourceFailure: return QLatin1String("random_source_failure");
     case GenerationError::Code::UniquenessExhausted: return QLatin1String("uniqueness_exhausted");
+    case GenerationError::Code::InvalidOutputRecord: return QLatin1String("invalid_output_record");
+    case GenerationError::Code::Cancelled: return QLatin1String("cancelled");
     case GenerationError::Code::ConstraintViolation: return QLatin1String("constraint_violation");
     case GenerationError::Code::Internal: return QLatin1String("internal");
     }

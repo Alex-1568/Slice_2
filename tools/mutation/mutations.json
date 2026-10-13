@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "Each mutation replaces exactly one occurrence of `old` with `new` in a COPY of the tree. expected_failures lists the ctest names that must fail.",
+  "note": "Each mutation replaces exactly one occurrence of old with new in a scratch source tree. expected_failures lists CTest names that must fail. Slice 2 identity/template coverage is M43-M55; GUI/runtime-plugin regression coverage is M56-M60. The catalogue has not been fully executed in this environment because Qt 6 development files are unavailable; do not claim kill counts until run against a successful baseline.",
   "mutations": [
     {
       "id": "M01",
@@ -276,8 +276,8 @@
       "id": "M24",
       "description": "Registry accepts duplicate generator ids",
       "file": "src/domain/generator/GeneratorRegistry.cpp",
-      "old": "    if (duplicate)",
-      "new": "    if (false)",
+      "old": "    const bool duplicate = std::any_of(m_entries.cbegin(), m_entries.cend(), [&](const Entry& entry) {\n        return entry.metadata.id == metadata.id;\n    });\n    if (duplicate)",
+      "new": "    const bool duplicate = std::any_of(m_entries.cbegin(), m_entries.cend(), [&](const Entry& entry) {\n        return entry.metadata.id == metadata.id;\n    });\n    if (false)",
       "expected_failures": [
         "tst_registry",
         "tst_plugin_boundary"
@@ -412,12 +412,283 @@
       "id": "M36",
       "description": "TSan checker accepts non-data-race report kinds as known",
       "file": "tools/check_tsan.py",
-      "old": "    if is_data_race and watchdog_races:",
-      "new": "    if watchdog_races:",
+      "old": "    if is_data_race and watchdog_races and has_known_qttest_teardown_signature(report):",
+      "new": "    if watchdog_races and has_known_qttest_teardown_signature(report):",
       "expected_failures": [
         "tsan_checker_selftest"
       ],
       "rationale": "only plain data races can be the known class"
+    },
+    {
+      "id": "M37",
+      "description": "Re-enable IRandomProvider copy construction and allow attestation copying",
+      "file": "src/domain/random/IRandomProvider.hpp",
+      "old": "    IRandomProvider(const IRandomProvider&) = delete;",
+      "new": "    IRandomProvider(const IRandomProvider&) = default;",
+      "expected_failures": [
+        "tst_secure_random",
+        "irandom_provider_copy_ctor_boundary"
+      ],
+      "rationale": "Runtime type-trait regression and compiler-negative copy-constructor probe must reject a derived provider that could inherit the base attestation."
+    },
+    {
+      "id": "M38",
+      "description": "Re-enable IRandomProvider copy assignment and allow attestation copying",
+      "file": "src/domain/random/IRandomProvider.hpp",
+      "old": "    IRandomProvider& operator=(const IRandomProvider&) = delete;",
+      "new": "    IRandomProvider& operator=(const IRandomProvider&) = default;",
+      "expected_failures": [
+        "tst_secure_random",
+        "irandom_provider_copy_assign_boundary"
+      ],
+      "rationale": "Runtime type-trait regression and compiler-negative copy-assignment probe must reject copying the attested base state."
+    },
+    {
+      "id": "M39",
+      "description": "Accept a watchdog race without the known Qt Test teardown stack signature",
+      "file": "tools/check_tsan.py",
+      "old": "    if is_data_race and watchdog_races and has_known_qttest_teardown_signature(report):",
+      "new": "    if is_data_race and watchdog_races:",
+      "expected_failures": [
+        "tsan_checker_selftest"
+      ],
+      "rationale": "The generic watchdog-vs-worker synthetic report must remain UNEXPECTED unless its stack matches the empirically known teardown signature."
+    },
+    {
+      "id": "M40",
+      "description": "Bypass generator-boundary flat-record validation",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "        if (!issues.isValid()) {\n            m_error = GenerationError::invalidOutputRecord(std::move(issues));",
+      "new": "        if (false) {\n            m_error = GenerationError::invalidOutputRecord(std::move(issues));",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ],
+      "rationale": "Boundary-level batch and streaming tests must fail if undeclared/nested output is forwarded."
+    },
+    {
+      "id": "M41",
+      "description": "Return partial batch records when cancellation occurs",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "    if (summary.value().status == CompletionStatus::Cancelled)\n        return BatchResult::failure(GenerationError::cancelled());",
+      "new": "    if (summary.value().status == CompletionStatus::Cancelled)\n        return BatchResult::success(GeneratorResult{sink.take(), summary.value()});",
+      "expected_failures": [
+        "tst_generator_boundary",
+        "tst_password_generator",
+        "tst_robustness"
+      ],
+      "rationale": "Batch cancellation tests must enforce no partial result set is exposed by the batch API."
+    },
+    {
+      "id": "M42",
+      "description": "Allow records to omit declared output fields",
+      "file": "src/domain/generator/GeneratorMetadata.cpp",
+      "old": "        if (!record.contains(field.key))\n            result.addError(field.key, QStringLiteral(\"missing_field\"),",
+      "new": "        if (false)\n            result.addError(field.key, QStringLiteral(\"missing_field\"),",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ],
+      "rationale": "A generator output record must contain every declared field, not merely avoid undeclared or nested values."
+    },
+    {
+      "id": "M43",
+      "description": "Template engine silently accepts unknown placeholder tokens",
+      "file": "src/generators/identity/common/TemplateEngine.cpp",
+      "old": "        if (!allowed.contains(token)) {",
+      "new": "        if (false && !allowed.contains(token)) {",
+      "expected_failures": [
+        "tst_template_engine",
+        "tst_identity_generators"
+      ],
+      "rationale": "unknown template tokens must be rejected before generation"
+    },
+    {
+      "id": "M44",
+      "description": "Email-like generator allows a non-reserved domain",
+      "file": "src/generators/identity/generators/EmailLikeIdentifierGenerator.cpp",
+      "old": "    if (!isSafeEmailDomain(parameters.value(QStringLiteral(\"domain\")).toString()))",
+      "new": "    if (false && !isSafeEmailDomain(parameters.value(QStringLiteral(\"domain\")).toString()))",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "only explicit example/test/invalid domains are supported"
+    },
+    {
+      "id": "M45",
+      "description": "UUID generator emits the wrong version bits",
+      "file": "src/generators/identity/common/IdentityUtilities.cpp",
+      "old": "    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0FU) | 0x40U); // RFC 4122 version 4",
+      "new": "    bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0FU) | 0x30U); // mutant: invalid version",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "UUID v4 output must set version 4 and the RFC variant bits"
+    },
+    {
+      "id": "M46",
+      "description": "Identity batch uniqueness does not reject seen keys",
+      "file": "src/generators/identity/common/IdentityGeneratorBase.cpp",
+      "old": "                if (!key.isEmpty() && !seen.contains(key)) {",
+      "new": "                if (!key.isEmpty()) {",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "unique batches must contain distinct identity keys"
+    },
+    {
+      "id": "M47",
+      "description": "Runtime identity output-string limit is only checked at zero limit",
+      "file": "src/generators/identity/common/IdentityGeneratorBase.cpp",
+      "old": "                    if (it.value().isString()\n                        && static_cast<std::size_t>(it.value().toString().size()) > context.limits().maxOutputLength) {",
+      "new": "                    if (it.value().isString() && context.limits().maxOutputLength == 0U\n                        && static_cast<std::size_t>(it.value().toString().size()) > context.limits().maxOutputLength) {",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "runtime output length limits must be enforced on generated scalar strings"
+    },
+    {
+      "id": "M48",
+      "description": "Generator boundary no longer validates flat output records",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "        common::ValidationResult issues = validateRecord(m_metadata, record);",
+      "new": "        common::ValidationResult issues;",
+      "expected_failures": [
+        "tst_generator_boundary",
+        "tst_identity_generators"
+      ],
+      "rationale": "undeclared fields and nested values must not reach consumer sinks"
+    },
+    {
+      "id": "M49",
+      "description": "Email local-part templates can include a domain separator",
+      "file": "src/generators/identity/generators/EmailLikeIdentifierGenerator.cpp",
+      "old": "    if (templateValue.contains(QLatin1Char('@')))",
+      "new": "    if (false && templateValue.contains(QLatin1Char('@')))",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "domain is always selected separately from the local-part template"
+    },
+    {
+      "id": "M50",
+      "description": "Template token detection treats escaped or malformed text as a real token",
+      "file": "src/generators/identity/common/TemplateEngine.cpp",
+      "old": "    return parsed.issues.isValid() && parsed.tokens.contains(token);",
+      "new": "    return parsed.issues.isValid();",
+      "expected_failures": [
+        "tst_template_engine",
+        "tst_identity_generators"
+      ],
+      "rationale": "escaped {{token}} text must not satisfy dynamic-token checks"
+    },
+    {
+      "id": "M51",
+      "description": "UUID mode ignores the fixed 36-character output limit",
+      "file": "src/generators/identity/generators/AccountIdGenerator.cpp",
+      "old": "    if (mode == QLatin1String(\"uuid\") && limits.maxOutputLength < 36U)",
+      "new": "    if (false && mode == QLatin1String(\"uuid\") && limits.maxOutputLength < 36U)",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "UUID v4 has a fixed output length of 36 characters"
+    },
+    {
+      "id": "M52",
+      "description": "Selected ID modes bypass required alphabet validation",
+      "file": "src/generators/identity/generators/AccountIdGenerator.cpp",
+      "old": "    if (usesAlphabet) {",
+      "new": "    if (false && usesAlphabet) {",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "alphanumeric modes must reject an empty alphabet while UUID mode need not use it"
+    },
+    {
+      "id": "M53",
+      "description": "Email-like identifiers ignore the configured total output limit",
+      "file": "src/generators/identity/generators/EmailLikeIdentifierGenerator.cpp",
+      "old": "    if (limits.maxOutputLength < minimumIdentifierLength)",
+      "new": "    if (false && limits.maxOutputLength < minimumIdentifierLength)",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "the total email-like identifier includes local part, @, and the reserved domain"
+    },
+    {
+      "id": "M54",
+      "description": "Inactive username templates are validated even when the built-in pattern is selected",
+      "file": "src/generators/identity/generators/UsernameGenerator.cpp",
+      "old": "    if (custom.isEmpty() && pattern == QLatin1String(\"custom\")) {",
+      "new": "    if (true) {",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "unselected template fields must not invalidate non-custom patterns"
+    },
+    {
+      "id": "M55",
+      "description": "Reject all UTF-16 surrogate code units including valid pairs in local name data",
+      "file": "src/generators/identity/data/NameDataProvider.cpp",
+      "old": "if (character.isHighSurrogate()) {",
+      "new": "if (character.isHighSurrogate() || character.isLowSurrogate()) {",
+      "expected_failures": [
+        "tst_identity_generators"
+      ],
+      "rationale": "valid non-BMP names should be accepted while unpaired surrogates are rejected"
+    },
+    {
+      "id": "M56",
+      "description": "Enable native plugin loading by default",
+      "file": "src/infrastructure/plugins/RuntimePluginManager.hpp",
+      "old": "bool enabled = false;",
+      "new": "bool enabled = true;",
+      "expected_failures": [
+        "tst_runtime_plugin"
+      ],
+      "rationale": "Native plugin loading must be opt-in; a default manager refuses loads until the caller explicitly approves a session directory."
+    },
+    {
+      "id": "M57",
+      "description": "Skip trusted-directory enforcement for native plugins",
+      "file": "src/infrastructure/plugins/RuntimePluginManager.cpp",
+      "old": "if (!pathIsTrusted(canonical))\n        return fail(Error::Code::OutsideTrustedDirectory,",
+      "new": "if (false && !pathIsTrusted(canonical))\n        return fail(Error::Code::OutsideTrustedDirectory,",
+      "expected_failures": [
+        "tst_runtime_plugin"
+      ],
+      "rationale": "A file outside the explicitly approved canonical directory must not be loaded."
+    },
+    {
+      "id": "M58",
+      "description": "Skip the Qt plugin IID check before instantiation",
+      "file": "src/infrastructure/plugins/RuntimePluginManager.cpp",
+      "old": "if (pluginMeta.value(QStringLiteral(\"IID\")).toString()\n        != QString::fromLatin1(AR_GENERATOR_PLUGIN_IID)) {",
+      "new": "if (false && pluginMeta.value(QStringLiteral(\"IID\")).toString()\n        != QString::fromLatin1(AR_GENERATOR_PLUGIN_IID)) {",
+      "expected_failures": [
+        "tst_runtime_plugin"
+      ],
+      "rationale": "An unrelated shared library must be rejected based on metadata before Qt tries to instantiate it."
+    },
+    {
+      "id": "M59",
+      "description": "Ignore a failed atomic plugin-generator registry commit",
+      "file": "src/infrastructure/plugins/RuntimePluginManager.cpp",
+      "old": "if (!commit)\n            return fail(Error::Code::RegistrationFailed, commit.error().message);",
+      "new": "if (false && !commit)\n            return fail(Error::Code::RegistrationFailed, commit.error().message);",
+      "expected_failures": [
+        "tst_runtime_plugin"
+      ],
+      "rationale": "On an ID conflict the plugin must fail and must not be reported as successfully loaded."
+    },
+    {
+      "id": "M60",
+      "description": "Display raw sensitive output without the SensitiveDataPolicy",
+      "file": "src/gui/MainWindow.cpp",
+      "old": "const QJsonObject shown = policy.sanitize(raw, domain::OutputChannel::Display);",
+      "new": "const QJsonObject shown = raw;",
+      "expected_failures": [
+        "tst_gui_smoke"
+      ],
+      "rationale": "The GUI smoke test verifies that password output is masked by default and only shown after the explicit reveal toggle."
     }
   ]
 }

@@ -2,17 +2,26 @@
 
 ## What was actually compiled and run
 
-| Toolchain | Compiled | Tests run | Notes |
-|---|---|---|---|
-| GCC 13.3 + libstdc++, Qt 6.4.2, Linux x86-64 | yes | yes (Debug, Release `-Werror`, ASan+UBSan, TSan) | primary |
-| Clang 18.1 + libstdc++, Qt 6.4.2, Linux | see `docs/VERIFICATION.md` | see `docs/VERIFICATION.md` | |
-| Clang 18.1 + **libc++**, Linux | libraries only (compile check) | no | Qt 6.4.2 here is built against libstdc++, so linking tests against a libc++ build is not meaningful |
-| **MSVC / Windows** | **no** | **no** | static review only |
-| **Apple Clang / macOS** | **no** | **no** | static review only; libc++ evidence above is for LLVM 18 on Linux, not for Apple's shipped toolchain |
-| Qt other than 6.4.2 (incl. 6.11.2 from the vcpkg baseline) | **no** | **no** | |
-| 32-bit targets | **no** | **no** | reviewed statically (below) |
+The current round-4 source was reviewed in an environment with GCC 14.2.0, Clang 17.0.0, and
+CMake 3.31.6, but **Qt 6 development files are missing**, so a full CMake configure/build/CTest run
+could not be performed. The isolated `IRandomProvider.cpp` compile and copy-operation negative probes
+passed with GCC and Clang; the Python TSan-checker self-test passed. See `docs/VERIFICATION.md` for
+commands and exact outcomes.
 
-Nothing here is described as "cross-platform verified".
+The following results belong to the **previous round-3 source tree only**, not the round-4 edits:
+
+| Toolchain | Prior-round status | Notes |
+|---|---|---|
+| GCC 13.3 + libstdc++, Qt 6.4.2, Linux x86-64 | full Debug/Release/sanitizer/TSan checks reported in round-3 verification | historical baseline; not rerun on round 4 |
+| Clang 18.1 + libstdc++, Qt 6.4.2, Linux | full project compile/test reported in round-3 verification | historical baseline; not rerun on round 4 |
+| Clang 18.1 + libc++, Linux | libraries only (compile check) | historical baseline; tests not run |
+| **MSVC / Windows** | **no** | static review only |
+| **Apple Clang / macOS** | **no** | static review only |
+| Qt other than 6.4.2 (incl. 6.11.2 from the vcpkg baseline) | **no** | |
+| 32-bit targets | **no** | static review only |
+
+Nothing here is described as "cross-platform verified". Round-3 results do not constitute a green
+round-4 build.
 
 ## Static review checklist
 
@@ -33,5 +42,5 @@ Nothing here is described as "cross-platform verified".
 ## Known unknowns
 
 MSVC warnings (`/W4`), Apple Clang's libc++ version, Qt 6.5-6.11 deprecations, and Windows
-path/quoting behaviour of the test harness are unverified. The next person with such a machine
-should run `tools/verify.sh debug` and record the result in `docs/VERIFICATION.md`.
+path/quoting behaviour of the test harness are unverified. A Qt-enabled runner must execute `tools/verify.sh debug` against the round-4 source and record the
+result in `docs/VERIFICATION.md` before approval.

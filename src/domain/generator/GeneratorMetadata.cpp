@@ -55,13 +55,18 @@ common::ValidationResult validateRecord(const GeneratorMetadata& metadata, const
         declared.insert(field.key);
 
     common::ValidationResult result;
+    for (const OutputFieldSpec& field : metadata.outputFields) {
+        if (!record.contains(field.key))
+            result.addError(field.key, QStringLiteral("missing_field"),
+                            QStringLiteral("Record is missing a declared output field."));
+    }
     for (auto it = record.constBegin(); it != record.constEnd(); ++it) {
         if (!declared.contains(it.key()))
             result.addError(it.key(), QStringLiteral("undeclared_field"),
-                            QStringLiteral("Record field \"%1\" is not declared in the generator's outputFields.").arg(it.key().left(64)));
+                            QStringLiteral("Record contains a field not declared in outputFields: %1.").arg(it.key().left(64)));
         if (it.value().isObject() || it.value().isArray())
             result.addError(it.key(), QStringLiteral("nested_value"),
-                            QStringLiteral("Record field \"%1\" is not a scalar; records must be flat.").arg(it.key().left(64)));
+                            QStringLiteral("Record field %1 is not a scalar; records must be flat.").arg(it.key().left(64)));
     }
     return result;
 }

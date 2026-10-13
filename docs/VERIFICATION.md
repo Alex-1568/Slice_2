@@ -1,94 +1,120 @@
-# Verification record — Slice 1.1 (round 3)
+# Historical verification record — Slice 1.1 round 4
 
-Environment: Ubuntu 24.04 x86-64 (**1 CPU core**), GCC 13.3.0 + libstdc++, Clang 18.1.3, CMake 3.28.3,
-Ninja, **Qt 6.4.2 (system package)**, Linux 6.x (Firecracker VM). The sandbox restarted several times
-during the session, killing background jobs; every result below was produced by a run that completed on the
-final source tree (the mutation run needed a restart-safe runner, see its section).
+> **Historical checkpoint.** This document records the Slice 1.1 round-4 core-hardening snapshot before Slice 2 generator integration and before the runtime plugin API v3. Its API-version and “plugin out of scope” statements are historical, not the current project state. For the latest GUI/runtime-plugin source and this sandbox's checks, see `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md`.
 
-## A. Reproduced in this round, on the final tree
+## Status
 
-All via `tools/verify.sh <step>` (each step exits nonzero on any failed condition) unless noted.
+**The round-4 source changes have not received a full C++ build/test verification in this review
+sandbox.** The source archive supplied for review contains the round-3 tree; this work applies the
+round-4 corrections on top of that source. Python/tooling and standalone compiler checks below were
+executed successfully, but CMake cannot configure the project because Qt 6 development files are
+not installed. Therefore no green CTest baseline exists here, and no round-4 C++ test, sanitizer,
+TSan, benchmark, or mutation kill count is claimed.
 
-| Step | Result |
+## Environment used for this review
+
+| Component | Actual environment |
 |---|---|
-| `debug` (cmake --preset dev-debug / build / ctest) | 15/15 ctest entries pass = 13 Qt Test suites (**275** test functions/data rows by Qt Test's count) + `concurrency_check` + `tsan_checker_selftest` |
-| `release` (`-Werror`) | 15/15, 0 warnings |
-| `clang` (Clang 18 + libstdc++, `-Werror`) | 15/15, 0 warnings |
-| `sanitizers` (ASan + UBSan) | 15/15, no sanitizer reports |
-| `tsan`: `concurrency_check`, strict | exit 0, **0 reports** |
-| `tsan`: `tst_registry`, `tst_password_generator`, `tst_robustness`, qttest mode | tests pass; 3 reports each, all classified KNOWN-QTTEST; 0 PROJECT, 0 UNEXPECTED |
-| `selftest` | classifier self-test passes (incl. the new cases), 6 failure scenarios make `verify.sh` exit 1, 2 positive controls exit 0 |
-| `libcxx` (Clang 18 + libc++) | the four libraries compile; **tests not built or run** |
-| `benchmark` | ran to completion (numbers below) |
-| Mutation: `python3 tools/mutation/run_mutations.py --workdir DIR --resume` | **36 of 36 killed as expected** (`docs/mutation-report.md`) |
-| Clean configure/build/test from the extracted final archive | see the "Clean-room check" section at the end of this file |
+| OS / architecture | Linux x86-64, kernel `6.18.44` (container) |
+| C++ compiler | GCC 14.2.0 |
+| Second compiler | Clang 17.0.0 |
+| CMake | 3.31.6 |
+| Python | 3.13.5 |
+| Qt development package | **Missing** (`Qt6Config.cmake` / `qt6-config.cmake` not found) |
+| Ninja | Not relied on for the standalone checks |
 
-Real fault injection ran, not skipped: `tst_secure_random` executed (a) the real OS backend under a
-seccomp-denied `getrandom` (reports `EPERM`) and (b) the full production path (attested provider, ordinary
-context, real `PasswordGenerator`) under the same fault (returns `RandomSourceFailure`, no records).
+These versions describe the current review environment, not the earlier round-3 environment.
+The previous report's GCC 13.3 / Clang 18 / Qt 6.4.2 results apply only to the round-3 source tree.
 
-### What the three round-3 fixes are backed by
+## A. Checks actually executed in round 4
 
-* **RNG trust boundary** (`tst_secure_random`, 14 functions; `static_assert`s; scan tests): injected-source
-  providers are never attested; a provider hiding the flag with its own function is rejected; all test doubles are
-  untrusted; production code cannot reference the injection/attestation words. Mutations M25, M31, M32 killed.
-* **TSan classification** (`tools/check_tsan.py --self-test`, also ctest `tsan_checker_selftest`): the watchdog must
-  be one of the threads that performed the racing accesses in a plain data race. Cases: race between two other
-  threads with the watchdog named only in creation annotations -> UNEXPECTED (verification fails); watchdog only
-  created a racing thread -> UNEXPECTED; non-data-race kind -> UNEXPECTED; unparseable access headers ->
-  UNEXPECTED; watchdog as a real racing party -> accepted. The real logs of this round still classify as known.
-  Mutations M35 and M36 (loosened rules) killed by `tsan_checker_selftest`.
-* **Nested JSON** (`tst_sensitive`): flat-record contract, whole-value handling, no recursion, `validateRecord`.
-  Mutations M33, M34 killed.
+| Command/check | Actual result | What it establishes |
+|---|---|---|
+| `python3 tools/check_tsan.py --self-test` | **PASS: 32 self-test assertions** | Checker accepts the known synthetic teardown signature and rejects generic watchdog/worker races, project frames, unparseable races, and bad exit statuses. |
+| `python3 tools/expect_compile_failure.py` with GCC 14.2 for copy-constructor attack | **PASS** | Compiler rejects a derived class that copies the `IRandomProvider` base subobject. |
+| Same compile-fail probe with GCC 14.2 for copy-assignment attack | **PASS** | Compiler rejects assignment of the `IRandomProvider` base subobject. |
+| Same two compile-fail probes with Clang 17.0 | **PASS** | Both compiler-negative cases are rejected by a second compiler. |
+| Compile `src/domain/random/IRandomProvider.cpp` with GCC strict warnings and `-Werror` | **PASS** | The standalone, Qt-independent randomness interface implementation compiles cleanly. |
+| Compile `src/domain/random/IRandomProvider.cpp` with Clang strict warnings and `-Werror` | **PASS** | Same isolated compile check with Clang. |
+| `python3 -m py_compile tools/check_tsan.py tools/expect_compile_failure.py tools/mutation/run_mutations.py` | **PASS** | Python syntax checks. |
+| `bash -n tools/verify.sh` | **PASS** | Shell syntax check. |
+| Validate all `tools/mutation/mutations.json` old-text patterns against the final source | **PASS: 42/42 match exactly once** | Mutation definitions are syntactically applicable; this is not evidence that the mutations were killed. |
 
-### TSan: how the verdict is reached (nothing is suppressed)
+The initial Clang compile-fail probe exposed a diagnostic-wording assumption in
+`expect_compile_failure.py` (`call to deleted constructor`); the script was updated to recognise that
+compiler wording. All four GCC/Clang negative probes were rerun and passed after the change.
 
-`check_tsan.py` receives the log and the exit status. *strict*: exit 0 and zero reports. *qttest*: exit 0 or 66,
-`Totals: N passed, 0 failed`, and every report must be KNOWN-QTTEST (PROJECT or UNEXPECTED fail; a TSan runtime
-abort always fails). Wording for the accepted class: **TSan did not identify project-code frames in the observed
-reports; the remaining reports originated from Qt Test/system-library teardown in the tested environment.**
-`tst_secure_random` is excluded from the TSan list because it spawns a helper process and libtsan (GCC 13) aborts
-with an internal `CHECK failed ... ForkAfter` when a multi-threaded process forks; the checker reported that as a
-failure when it first happened, and the exclusion is documented in `tools/verify.sh`. TSan observes only the
-interleavings that occurred, on one core.
+## B. Full project verification blocked
 
-### Mutation runner
+Command attempted:
 
-`tools/mutation/mutations.json` lists each defect (file, replaced text, tests that must fail, why). The runner
-copies the tree, applies one defect at a time, rebuilds, runs ctest and reports KILLED / KILLED-OTHER / SURVIVED /
-STALE / BUILD-ERROR. After a sandbox restart killed a run, it was made restart-safe (per-mutation results file,
-`--resume`, files touched so objects built from an interrupted mutant are rebuilt) and the full 36-mutation run was
-repeated from scratch; the report comes from that complete run. Mutations show that these 36 defects are noticed,
-not that no other defect exists.
+```bash
+cmake --preset dev-debug
+```
 
-### Benchmark (`docs/benchmark-sample.txt`)
+Actual result: **configure failed before generating build files**, at `find_package(Qt6 6.4 REQUIRED ...)`:
 
-One Xeon core @ 2.1 GHz, Release: fail-closed OS provider ~1.8 M `uniformIndex` calls/s and roughly 28-34 k
-24-character passwords/s; the deterministic test provider is far faster (see the file). The earlier Qt-based
-provider was ~2.3x faster but could not report failure. Measurements on one machine, not targets.
+```text
+Could not find a package configuration file provided by "Qt6"
+(Qt6Config.cmake / qt6-config.cmake).
+```
 
-## B. Reports from earlier runs only (NOT reproduced on this tree)
+`pkg-config --modversion Qt6Core` also reports that Qt6Core is unavailable. An attempt to refresh
+APT package metadata (`apt-get update -qq`) timed out. Because configure did not succeed, the following
+round-4 checks could not be run here:
 
-* The 30-mutation results and the clean-room build of the round-2 archive describe the round-2 tree. They are
-  superseded by section A and are not evidence for this tree.
-* `docs/RANDOMNESS_AUDIT.md` findings about Qt 6.4.2 come from reading upstream source (tag `v6.4.2`); the Ubuntu
-  package's patches were not examined, and the empirical Qt observation (exit 20, no error indication) was made
-  on this machine only.
+- CTest: unit, integration, security, robustness, compile-fail CTest entries as part of the full suite;
+- Debug build and Release `-Werror` build;
+- full Clang project build;
+- ASan/UBSan;
+- TSan `concurrency_check` and Qt Test suites;
+- benchmark;
+- `tools/mutation/run_mutations.py` against a green CTest baseline.
 
-## C. Not verified
+**No round-4 C++ suite pass count and no round-4 mutation kill count is claimed.** The `36/36` figure
+in the supplied round-3 report belongs to a previous source tree and is not evidence for this tree.
+`docs/mutation-report.md` deliberately marks M37-M42 and the full round-4 mutation run as not run.
 
-MSVC, Apple Clang, Windows, macOS (the `getentropy` and `BCryptGenRandom` backends were **never compiled**),
-32-bit builds, Qt versions other than 6.4.2 (including 6.11.2 from the pinned vcpkg baseline), the vcpkg manifest
-build, any CI configuration, Qt Test suites under libc++, and `tst_secure_random` under TSan. See
-`docs/PORTABILITY.md`, `docs/DEPENDENCIES.md`, `docs/RANDOMNESS_AUDIT.md`.
+## C. Round-4 behavior added but requiring full-suite execution
 
-## Clean-room check
+- `IRandomProvider` copy/move construction and assignment are deleted; runtime regression checks and
+  compiler-negative fixtures cover the copy constructor and copy-assignment attack.
+- TSan's `KNOWN-QTTEST` class requires a parsed data race, the watchdog as an actual racing thread,
+  no project frames, and the known `QWaitCondition::~QWaitCondition` / `QTest::qRun` symbols paired
+  with their expected Qt Core / Qt Test module names on the same stack frames. A generic race, or
+  a report where symbols and module names occur in unrelated frames, is expected to be `UNEXPECTED`.
+- `IGenerator::generateInto()` is virtual-final and wraps `generateIntoImpl()` with a validating sink.
+  Records must contain every declared output field, must not contain undeclared keys, and must not
+  contain object/array values.
+- Batch `generate()` returns a `Cancelled` error and no records when cancellation happens after
+  partial work. Streaming remains non-transactional; valid records already passed to an external sink
+  cannot be rolled back if a later record is invalid or generation is cancelled.
+- `kGeneratorApiVersion` is 2 because the generator implementation hook is a breaking extension-contract
+  change.
 
-An archive cannot contain the result of testing itself, so the check was done in two passes:
+## D. Clean-archive verification (executed against the generated ZIP)
 
-1. **Archive A** (the tree immediately before this section was written) was unzipped into an empty directory and
-   built with `cmake --preset dev-debug`, `cmake --build --preset dev-debug`, `ctest --preset dev-debug`.
-   Result: `100% tests passed, 0 tests failed out of 15`, 0 compiler warnings, exit status 0.
-2. **The delivered archive** differs from A only by this section of `docs/VERIFICATION.md` (documentation).
-   The same three commands were run again on a fresh extraction of the delivered archive; that result is reported
-   in the delivery message, not in this file.
+The final ZIP was extracted to a new directory separate from the working tree. These checks were
+executed from that fresh extraction:
+
+| Check | Actual result |
+|---|---|
+| `unzip -t ar_slice1_1_r4.zip` | PASS; no archive integrity errors |
+| Extracted file set vs. SHA-256 inventory | PASS; 93/93 files, byte sizes and hashes match |
+| Python syntax, Shell syntax, JSON manifests | PASS |
+| `python3 tools/check_tsan.py --self-test` | PASS; all 32 checker self-test assertions |
+| Standalone `IRandomProvider.cpp` compile, GCC 14.2 and Clang 17 | PASS with strict warnings and `-Werror` |
+| Copy-constructor/assignment negative probes, GCC and Clang | PASS; all four invocations reject the forbidden operations |
+| Mutation pattern applicability audit | PASS; 42/42 old-text patterns match once; **not** a mutation-kill result |
+| `cmake --preset dev-debug` from the clean extraction | BLOCKED/FAIL at configure because Qt6 development files are not installed |
+
+The configure failure occurs at `find_package(Qt6 6.4 REQUIRED ...)` because `Qt6Config.cmake` and
+`qt6-config.cmake` are absent. As a result, there is no clean-room build or CTest result for this
+round-4 archive. It must be configured, built, and tested on a Qt-enabled Linux runner before Slice 1.1
+can be approved.
+
+## E. Platforms not verified
+
+MSVC, Windows, Apple Clang, macOS, the macOS `getentropy` backend, the Windows `BCryptGenRandom`
+backend, Qt other than 6.4.2, the vcpkg manifest build, 32-bit targets, and CI remain unverified.
+The previous round-3 Linux results are historical only and do not replace testing the round-4 source.

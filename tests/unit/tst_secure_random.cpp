@@ -37,6 +37,11 @@ public:
     std::uint64_t nextUInt64() override { return 0x123456789ABCDEFULL; }
     bool isCryptographicallySecure() const noexcept { return true; } // hides, does not override
 };
+class CopyProbeProvider final : public domain::IRandomProvider
+{
+public:
+    std::uint64_t nextUInt64() override { return 0xA5A5A5A5A5A5A5A5ULL; }
+};
 } // namespace
 
 class TstSecureRandom : public QObject
@@ -80,6 +85,24 @@ private slots:
         QVERIFY(!result.hasValue());
         QCOMPARE(result.error().code, GenerationError::Code::InsecureRandomSource);
         QCOMPARE(source->calls(), std::size_t{0}); // rejected BEFORE drawing anything
+    }
+
+    void untrustedDerivedProvidersCannotCopyOrMoveTheAttestationBase()
+    {
+        // With a deleted base copy/move operation, the implicitly-generated operations
+        // on a concrete derived provider are also unavailable. A regression that restores
+        // a defaulted base copy/assignment makes these runtime assertions fail.
+        QVERIFY(!std::is_copy_constructible_v<CopyProbeProvider>);
+        QVERIFY(!std::is_copy_assignable_v<CopyProbeProvider>);
+        QVERIFY(!std::is_move_constructible_v<CopyProbeProvider>);
+        QVERIFY(!std::is_move_assignable_v<CopyProbeProvider>);
+
+        CopyProbeProvider custom;
+        QVERIFY(!custom.isCryptographicallySecure());
+        const GenerationContext context(custom);
+        const auto result = PasswordGenerator().generate(passwordRequest({}, 1), context);
+        QVERIFY(!result.hasValue());
+        QCOMPARE(result.error().code, GenerationError::Code::InsecureRandomSource);
     }
 
     void aCustomProviderCannotClaimSecurityBySayingSo()
