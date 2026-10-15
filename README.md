@@ -30,7 +30,7 @@ ctest --preset dev-debug --output-on-failure
 ./build/dev-debug/tools/cli_demo/ar_cli_demo --count 3 --length 24
 ```
 
-The example native plugin is built at `build/dev-debug/plugins/` (actual preset output path follows the configured binary directory). The GUI does not scan or load plugins automatically. Use **Plugins → Load native plugin…**, inspect the warning, and confirm only if you trust the selected code.
+The example native plugin is built at `build/dev-debug/plugins/` (actual preset output path follows the configured binary directory). The GUI does not scan or load plugins automatically. Use **Plugins → Load native plugin…**, inspect the warning, and confirm only if you trust the selected code. GUI approval applies to the exact selected library; it does not implicitly trust sibling libraries in the same folder.
 
 CMake options:
 
@@ -44,7 +44,11 @@ CMake options:
 
 Native plugins are not sandboxed. They execute with the app's privileges, can read or modify files and access the network, and can crash/corrupt the host. Loading is disabled by default and the GUI prompts before each load. The loader checks the Qt plugin IID and generator API version, stages generator registration, and commits the generator set atomically. Modules are intentionally kept resident until process exit; hot-unload is not offered because active jobs may hold plugin-defined vtables.
 
-Password and other sensitive values are masked by default. The GUI applies `SensitiveDataPolicy` on display, clipboard, and export. Clipboard clearing after 30 seconds is best-effort, not a guarantee of erasure from other processes or OS history. No generated results or passwords are saved automatically.
+Password and other sensitive values are masked by default. The GUI applies `SensitiveDataPolicy` on display, clipboard, and export. CSV/TSV string cells and headers also receive spreadsheet-formula protection; see `docs/GUI.md` for the representation trade-off. Clipboard clearing after 30 seconds is best-effort, not a guarantee of erasure from other processes or OS history. No generated results or passwords are saved automatically.
+
+## Whole-project audit changes
+
+The October 2026 audit added generic output-contract enforcement at the generator boundary, spreadsheet-formula mitigation for CSV/TSV export, exact-file plugin approval, plugin exception/error redaction, a safer busy-state plugin menu, and robustness tests. See `docs/PROJECT_AUDIT_2026-10.md` and the current environment limits in `docs/VERIFICATION.md`.
 
 ## Documentation
 
@@ -52,6 +56,7 @@ Password and other sensitive values are masked by default. The GUI applies `Sens
 - `docs/GUI.md` — dynamic forms, async generation, sensitive output, and export.
 - `docs/PLUGIN_DEVELOPMENT.md` — plugin API v3, build requirements, trust model, and example plugin.
 - `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md` — verification actually available in the current environment.
+- `docs/API_AUDIT.md` — public-contract audit and whole-project audit corrections.
 - `docs/VERIFICATION.md`, `docs/SLICE2_VERIFICATION.md`, `docs/SENSITIVE_DATA.md`, `docs/RANDOMNESS_AUDIT.md`, `docs/API_AUDIT.md`, `docs/PORTABILITY.md`, `docs/DEPENDENCIES.md`.
 
 ## Current verification caveat

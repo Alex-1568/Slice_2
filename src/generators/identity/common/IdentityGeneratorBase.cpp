@@ -117,12 +117,11 @@ IdentityGeneratorBase::generateIntoImpl(const domain::GeneratorRequest& request,
             if (!accepted)
                 return R::failure(domain::GenerationError::uniquenessExhausted());
 
+            ++summary.produced;
             if (validatedSink.accept(std::move(record)) == domain::SinkResponse::Stop) {
-                ++summary.produced;
                 summary.status = domain::CompletionStatus::StoppedBySink;
                 return R::success(summary);
             }
-            ++summary.produced;
         }
     } catch (const domain::RandomSourceError&) {
         return R::failure(domain::GenerationError::randomSourceFailure());

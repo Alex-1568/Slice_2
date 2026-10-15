@@ -1,6 +1,8 @@
 #include "domain/plugin/IGeneratorPlugin.hpp"
 
 #include <exception>
+#include <utility>
+#include <utility>
 
 namespace account_recommendations::domain
 {
@@ -10,24 +12,29 @@ common::Result<void, RegistryError> registerPluginGenerators(IGeneratorPlugin& p
 {
     using VoidResult = common::Result<void, RegistryError>;
 
-    if (plugin.apiVersion() != kGeneratorApiVersion)
-        return VoidResult::failure(
-            {RegistryError::Code::InvalidMetadata,
-             QStringLiteral("Plugin \"%1\" targets generator API %2, but this application provides %3.")
-                 .arg(plugin.pluginId())
-                 .arg(plugin.apiVersion())
-                 .arg(kGeneratorApiVersion),
-             {}});
+    // Plugin-controlled strings and exception text must not be forwarded into host UI/logs.
+    // Only stable error categories are retained across this trust boundary.
     try {
-        return plugin.registerGenerators(registry);
-    } catch (const std::exception& error) {
-        return VoidResult::failure({RegistryError::Code::InvalidMetadata,
-                                    QStringLiteral("Plugin \"%1\" threw during registration: %2")
-                                        .arg(plugin.pluginId(), QString::fromUtf8(error.what())),
-                                    {}});
+        const int api = plugin.apiVersion();
+        if (api != kGeneratorApiVersion)
+            return VoidResult::failure(
+                {RegistryError::Code::InvalidMetadata,
+                 QStringLiteral("Plugin API is incompatible with this application."),
+                 {}});
+
+        auto result = plugin.registerGenerators(registry);
+        if (!result) {
+            // Keep only the stable status code. Both the message and validation details came
+            // from plugin-controlled code and must not be surfaced as trusted host diagnostics.
+            RegistryError error;
+            error.code = result.error().code;
+            error.message = QStringLiteral("Plugin generator registration failed.");
+            return VoidResult::failure(std::move(error));
+        }
+        return VoidResult::success();
     } catch (...) {
         return VoidResult::failure({RegistryError::Code::InvalidMetadata,
-                                    QStringLiteral("Plugin \"%1\" threw during registration.").arg(plugin.pluginId()),
+                                    QStringLiteral("Plugin threw during registration."),
                                     {}});
     }
 }

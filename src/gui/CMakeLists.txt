@@ -1,4 +1,4 @@
-add_library(ar_gui STATIC MainWindow.hpp MainWindow.cpp)
+add_library(ar_gui STATIC MainWindow.hpp MainWindow.cpp ExportFormatting.hpp ExportFormatting.cpp)
 target_link_libraries(ar_gui PUBLIC
     ar_core ar_random ar_generators ar_identity_generators ar_plugin_runtime
     Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Concurrent)

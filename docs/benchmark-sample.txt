@@ -1,3 +1,4 @@
+# Historical sample, retained for context; these measurements are not from the current audit source snapshot. This audit did not rerun the benchmark because Qt 6 development files are unavailable.
 # Sample run (Slice 1.1 round 3). Intel Xeon 2.10GHz, 1 core, GCC 13.3, Qt 6.4.2, Release, fail-closed OS provider (getrandom). Measurements, not targets.
 uniformIndex(87) throughput
 SecureRandomProvider            1.8 M calls/s   (checksum 860090400)

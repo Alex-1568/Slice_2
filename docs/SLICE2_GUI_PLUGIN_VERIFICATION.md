@@ -1,3 +1,5 @@
+> Historical environment note: this document records the initial Slice 2 + GUI/plugin audit. For the newest whole-project source corrections and current verification results, see [`PROJECT_AUDIT_2026-10.md`](PROJECT_AUDIT_2026-10.md).
+
 # GUI and runtime plugin verification status
 
 ## Source-level implementation

@@ -66,6 +66,11 @@ public:
     RuntimePluginManager(const RuntimePluginManager&) = delete;
     RuntimePluginManager& operator=(const RuntimePluginManager&) = delete;
 
+    /// Approves only the canonical path of one native plugin after explicit user consent.
+    /// Returns false if the path is not an existing shared library.
+    [[nodiscard]] bool approveFileForSession(const QString& filePath);
+    /// Approves directories for this session. Directory approval allows loading any compatible
+    /// shared library inside the selected directory, so use file approval for a single-file pick.
     void enableForSession(const QStringList& approvedDirectories);
     void disableFurtherLoading() noexcept;
     [[nodiscard]] bool isEnabled() const noexcept;
@@ -89,6 +94,7 @@ private:
 
     domain::GeneratorRegistry& m_registry;
     RuntimePluginOptions m_options;
+    QStringList m_approvedFiles;
     std::vector<LoadedPlugin> m_loaded;
 };
 

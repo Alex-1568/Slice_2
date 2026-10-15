@@ -1,4 +1,5 @@
 #include "gui/MainWindow.hpp"
+#include "gui/ExportFormatting.hpp"
 
 #include "domain/generator/GeneratorRegistry.hpp"
 #include "generators/identity/registerIdentityGenerators.hpp"
@@ -6,6 +7,7 @@
 #include "domain/security/SensitiveDataPolicy.hpp"
 
 #include <QCheckBox>
+#include <QMenu>
 #include <QSpinBox>
 #include <QStandardItemModel>
 #include <QTreeWidget>
@@ -19,6 +21,19 @@ class GuiSmokeTests final : public QObject
 {
     Q_OBJECT
 private slots:
+    void csvAndTsvCellsMitigateFormulaInjection()
+    {
+        using namespace gui::export_format;
+        QCOMPARE(csvCell(QJsonValue(QStringLiteral("=1+1"))), QStringLiteral("'=1+1"));
+        QCOMPARE(csvCell(QJsonValue(QStringLiteral("=SUM(1,2)"))), QStringLiteral("\"'=SUM(1,2)\""));
+        QCOMPARE(csvCell(QJsonValue(QStringLiteral("hello,world"))), QStringLiteral("\"hello,world\""));
+        QCOMPARE(tsvCell(QJsonValue(QStringLiteral(" \t=1+1\nnext"))), QStringLiteral("'  =1+1 next"));
+        QCOMPARE(csvCell(QJsonValue(QStringLiteral("\uFEFF=1+1"))), QStringLiteral("'\uFEFF=1+1"));
+        QCOMPARE(csvCell(QJsonValue(-42.0)), QStringLiteral("-42")); // numeric cells remain numeric
+        QCOMPARE(escapeCsvText(protectSpreadsheetFormula(QStringLiteral("=formulaHeader"))),
+                 QStringLiteral("'=formulaHeader"));
+    }
+
     void metadataDrivenFormGeneratesARecord()
     {
         domain::GeneratorRegistry registry;
@@ -101,6 +116,25 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(results->data(passwordCell).toString()
                                      != domain::SensitiveDataPolicy::maskText(), 1000);
         QVERIFY(!results->data(passwordCell).toString().isEmpty());
+    }
+
+    void pluginMenuIsDisabledDuringGeneration()
+    {
+        domain::GeneratorRegistry registry;
+        QVERIFY(registry.registerGenerator(std::make_unique<generators::password::PasswordGenerator>()));
+        QVERIFY(generators::identity::registerIdentityGenerators(registry));
+        infrastructure::SecureRandomProvider random;
+        QVERIFY(random.probe());
+        infrastructure::RuntimePluginManager plugins(registry);
+        gui::MainWindow window(registry, random, plugins);
+        auto* tree = window.findChild<QTreeWidget*>(QStringLiteral("generatorTree"));
+        auto* pluginsMenu = window.findChild<QMenu*>(QStringLiteral("pluginsMenu"));
+        QVERIFY(tree);
+        QVERIFY(pluginsMenu);
+
+        QVERIFY(QMetaObject::invokeMethod(&window, "generate", Qt::DirectConnection));
+        QVERIFY(!pluginsMenu->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(pluginsMenu->isEnabled(), 8000);
     }
 };
 

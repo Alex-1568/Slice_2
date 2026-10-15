@@ -2,6 +2,10 @@
 
 > **Historical checkpoint.** This document records the Slice 1.1 round-4 core-hardening snapshot before Slice 2 generator integration and before the runtime plugin API v3. Its API-version and “plugin out of scope” statements are historical, not the current project state. For the latest GUI/runtime-plugin source and this sandbox's checks, see `docs/SLICE2_GUI_PLUGIN_VERIFICATION.md`.
 
+
+
+> **Current whole-project audit note (October 2026):** this document is a historical Slice 1.1 round-4 record. For the latest edits to Slice 2, GUI, runtime plugin consent, generation boundaries, and the actual verification available in this sandbox, see [`PROJECT_AUDIT_2026-10.md`](PROJECT_AUDIT_2026-10.md). The Qt SDK remains unavailable, so the latest project-wide C++ test/sanitizer/mutation runs are still blocked.
+
 ## Status
 
 **The round-4 source changes have not received a full C++ build/test verification in this review

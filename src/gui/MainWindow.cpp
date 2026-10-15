@@ -1,4 +1,5 @@
 #include "gui/MainWindow.hpp"
+#include "gui/ExportFormatting.hpp"
 
 #include "domain/generator/ConfigurationSchema.hpp"
 
@@ -44,6 +45,7 @@
 #include <algorithm>
 #include <limits>
 #include <exception>
+#include <utility>
 
 namespace account_recommendations::gui
 {
@@ -51,16 +53,6 @@ namespace
 {
 constexpr int kGeneratorIdRole = Qt::UserRole + 1;
 constexpr int kMaxInteractivePreviewRows = 10000;
-
-QString jsonValueText(const QJsonValue& value)
-{
-    if (value.isString()) return value.toString();
-    if (value.isBool()) return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-    if (value.isNull()) return QStringLiteral("null");
-    if (value.isDouble()) return QString::number(value.toDouble(), 'g', 15);
-    return domain::SensitiveDataPolicy::redactionText();
-}
-
 
 } // namespace
 
@@ -102,10 +94,11 @@ void MainWindow::buildUi()
     QAction* quitAction = fileMenu->addAction(tr("Quit"));
     connect(quitAction, &QAction::triggered, this, &QWidget::close);
 
-    auto* pluginsMenu = menuBar()->addMenu(tr("&Plugins"));
-    QAction* loadPluginAction = pluginsMenu->addAction(tr("Load native plugin…"));
+    m_pluginsMenu = menuBar()->addMenu(tr("&Plugins"));
+    m_pluginsMenu->setObjectName(QStringLiteral("pluginsMenu"));
+    QAction* loadPluginAction = m_pluginsMenu->addAction(tr("Load native plugin…"));
     connect(loadPluginAction, &QAction::triggered, this, &MainWindow::loadPluginFile);
-    QAction* loadedPluginsAction = pluginsMenu->addAction(tr("Loaded plugins…"));
+    QAction* loadedPluginsAction = m_pluginsMenu->addAction(tr("Loaded plugins…"));
     connect(loadedPluginsAction, &QAction::triggered, this, &MainWindow::showLoadedPlugins);
 
     auto* viewMenu = menuBar()->addMenu(tr("&Appearance"));
@@ -357,9 +350,14 @@ QWidget* MainWindow::makeEditor(const domain::FieldSpec& field)
         auto* editor = new QSpinBox(m_formContainer);
         const qint64 lower = field.minimum.value_or(std::numeric_limits<int>::min());
         const qint64 upper = field.maximum.value_or(std::numeric_limits<int>::max());
-        editor->setRange(static_cast<int>(std::clamp<qint64>(lower, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())),
-                         static_cast<int>(std::clamp<qint64>(upper, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())));
-        editor->setValue(static_cast<int>(field.defaultValue.toInteger()));
+        const int lowerInt = static_cast<int>(std::clamp<qint64>(
+            lower, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+        const int upperInt = static_cast<int>(std::clamp<qint64>(
+            upper, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+        editor->setRange(lowerInt, upperInt);
+        const qint64 defaultValue = field.defaultValue.toInteger();
+        const qint64 boundedDefault = std::clamp<qint64>(defaultValue, lowerInt, upperInt);
+        editor->setValue(static_cast<int>(boundedDefault));
         return editor;
     }
     case domain::FieldType::Boolean: {
@@ -504,7 +502,7 @@ void MainWindow::renderRecords(const QList<domain::GeneratedRecord>& records)
         const QJsonObject shown = policy.sanitize(raw, domain::OutputChannel::Display);
         QList<QStandardItem*> items;
         for (const domain::OutputFieldSpec& field : m_selectedMetadata.outputFields) {
-            auto* item = new QStandardItem(jsonValueText(shown.value(field.key)));
+            auto* item = new QStandardItem(export_format::scalarText(shown.value(field.key)));
             item->setEditable(false);
             if (field.sensitive && !settings.revealOnDisplay)
                 item->setToolTip(tr("Sensitive value hidden. Use the reveal control to display it."));
@@ -533,6 +531,8 @@ void MainWindow::setBusy(bool busy)
     m_generatorTree->setEnabled(!busy);
     m_countSpin->setEnabled(!busy && m_selectedMetadata.supportsBatch);
     m_uniqueCheck->setEnabled(!busy && m_selectedMetadata.supportsUniqueness);
+    if (m_pluginsMenu)
+        m_pluginsMenu->setEnabled(!busy);
 }
 
 void MainWindow::copySelectedRow()
@@ -563,7 +563,7 @@ void MainWindow::copySelectedRow()
     const QJsonObject clipboardRecord = policy.sanitize(raw, domain::OutputChannel::Clipboard, authorization);
     QStringList values;
     for (const domain::OutputFieldSpec& field : m_selectedMetadata.outputFields)
-        values.append(jsonValueText(clipboardRecord.value(field.key)));
+        values.append(export_format::scalarText(clipboardRecord.value(field.key)));
     const QString text = values.join(QLatin1Char('\t'));
     QApplication::clipboard()->setText(text);
     QPointer<QClipboard> clipboard = QApplication::clipboard();
@@ -625,30 +625,24 @@ void MainWindow::exportResults()
         for (const domain::OutputFieldSpec& field : m_selectedMetadata.outputFields)
             headers.append(field.label);
         QStringList lines;
-        const auto escapeCsv = [](QString cell) {
-            cell.replace(QLatin1Char('"'), QStringLiteral("\"\""));
-            if (cell.contains(QLatin1Char(',')) || cell.contains(QLatin1Char('"'))
-                || cell.contains(QLatin1Char('\n')) || cell.contains(QLatin1Char('\r')))
-                cell = QLatin1Char('"') + cell + QLatin1Char('"');
-            return cell;
-        };
         if (suffix == QStringLiteral("csv")) {
-            for (QString& header : headers) header = escapeCsv(header);
+            for (QString& header : headers)
+                header = export_format::escapeCsvText(export_format::protectSpreadsheetFormula(std::move(header)));
             lines.append(headers.join(QLatin1Char(',')));
             for (const QJsonObject& record : records) {
                 QStringList cells;
                 for (const domain::OutputFieldSpec& field : m_selectedMetadata.outputFields)
-                    cells.append(escapeCsv(jsonValueText(record.value(field.key))));
+                    cells.append(export_format::csvCell(record.value(field.key)));
                 lines.append(cells.join(QLatin1Char(',')));
             }
         } else {
+            for (QString& header : headers)
+                header = export_format::tsvText(std::move(header));
             lines.append(headers.join(QLatin1Char('\t')));
             for (const QJsonObject& record : records) {
                 QStringList cells;
                 for (const domain::OutputFieldSpec& field : m_selectedMetadata.outputFields)
-                    cells.append(jsonValueText(record.value(field.key)).replace(QLatin1Char('\t'), QLatin1Char(' '))
-                                      .replace(QLatin1Char('\r'), QLatin1Char(' '))
-                                      .replace(QLatin1Char('\n'), QLatin1Char(' ')));
+                    cells.append(export_format::tsvCell(record.value(field.key)));
                 lines.append(cells.join(QLatin1Char('\t')));
             }
         }
@@ -677,6 +671,15 @@ void MainWindow::clearResults()
 
 void MainWindow::loadPluginFile()
 {
+    // Loading a plugin rebuilds the generator tree and changes the selected metadata. Do not
+    // allow it during generation: otherwise an in-flight result could be rendered using another
+    // generator's field/sensitivity metadata.
+    if (m_watcher) {
+        QMessageBox::information(this, tr("Generation in progress"),
+                                 tr("Wait for generation to finish before loading a plugin."));
+        return;
+    }
+
     const QString selected = QFileDialog::getOpenFileName(
         this, tr("Select native generator plugin"), QDir::homePath(),
         tr("Shared libraries (*.dll *.so *.dylib);;All files (*)"));
@@ -685,13 +688,17 @@ void MainWindow::loadPluginFile()
 
     const auto answer = QMessageBox::warning(
         this, tr("Load native code?"),
-        tr("A native plugin runs with the same privileges as Account Recommendations. It can read files, access the network, and execute arbitrary code. Only load a plugin from a source you trust. This permission applies for this application session; the plugin will remain loaded until the process exits.\n\nLoad:\n%1")
+        tr("A native plugin runs with the same privileges as Account Recommendations. It can read files, access the network, and execute arbitrary code. Only load a plugin from a source you trust. This approval applies to this exact file for this session; it does not approve other libraries in the same folder. The plugin will remain loaded until the process exits.\n\nLoad:\n%1")
             .arg(QFileInfo(selected).fileName()),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
         return;
 
-    m_plugins.enableForSession({QFileInfo(selected).absolutePath()});
+    if (!m_plugins.approveFileForSession(selected)) {
+        QMessageBox::warning(this, tr("Invalid plugin"),
+                             tr("The selected file is not a recognized native shared library."));
+        return;
+    }
     const auto loaded = m_plugins.loadFile(selected);
     if (!loaded) {
         QMessageBox::warning(this, tr("Plugin load failed"), loaded.error().message);
@@ -724,7 +731,19 @@ void MainWindow::showLoadedPlugins()
 
 void MainWindow::setLightTheme()
 {
-    qApp->setPalette(style()->standardPalette());
+    QPalette palette;
+    palette.setColor(QPalette::Window, QColor(248, 249, 251));
+    palette.setColor(QPalette::WindowText, QColor(32, 35, 39));
+    palette.setColor(QPalette::Base, Qt::white);
+    palette.setColor(QPalette::AlternateBase, QColor(243, 245, 247));
+    palette.setColor(QPalette::ToolTipBase, Qt::white);
+    palette.setColor(QPalette::ToolTipText, QColor(32, 35, 39));
+    palette.setColor(QPalette::Text, QColor(32, 35, 39));
+    palette.setColor(QPalette::Button, QColor(238, 240, 243));
+    palette.setColor(QPalette::ButtonText, QColor(32, 35, 39));
+    palette.setColor(QPalette::Highlight, QColor(52, 105, 180));
+    palette.setColor(QPalette::HighlightedText, Qt::white);
+    qApp->setPalette(palette);
 }
 
 void MainWindow::setDarkTheme()
@@ -746,7 +765,7 @@ void MainWindow::setDarkTheme()
 
 void MainWindow::setSystemTheme()
 {
-    qApp->setPalette(style()->standardPalette());
+    qApp->setPalette(QApplication::style()->standardPalette());
 }
 
 void MainWindow::showStatus(const QString& message, int timeoutMs)

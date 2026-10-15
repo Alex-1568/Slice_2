@@ -16,7 +16,7 @@ namespace
 class FakePlugin final : public IGeneratorPlugin
 {
 public:
-    enum class Mode { Good, Throwing, Duplicate };
+    enum class Mode { Good, Throwing, Duplicate, ReturnedSensitiveError };
     FakePlugin(Mode mode, int api = domain::kGeneratorApiVersion) : m_mode(mode), m_api(api) {}
 
     QString pluginId() const override { return QStringLiteral("fake"); }
@@ -25,7 +25,10 @@ public:
     common::Result<void, RegistryError> registerGenerators(GeneratorRegistry& registry) override
     {
         if (m_mode == Mode::Throwing)
-            throw std::runtime_error("boom");
+            throw std::runtime_error("boom-private-sensitive-value");
+        if (m_mode == Mode::ReturnedSensitiveError)
+            return common::Result<void, RegistryError>::failure(
+                {RegistryError::Code::InvalidMetadata, QStringLiteral("plugin-private-generated-value"), {}});
         auto first = registry.registerGenerator(std::make_unique<StubGenerator>(QStringLiteral("from-plugin")));
         if (!first)
             return first;
@@ -69,7 +72,18 @@ private slots:
         FakePlugin plugin(FakePlugin::Mode::Throwing);
         const auto result = domain::registerPluginGenerators(plugin, registry);
         QVERIFY(!result.hasValue());
-        QVERIFY(result.error().message.contains(QStringLiteral("boom")));
+        QVERIFY(result.error().message.contains(QStringLiteral("Plugin threw during registration.")));
+        QVERIFY(!result.error().message.contains(QStringLiteral("boom-private-sensitive-value")));
+    }
+
+    void pluginReturnedErrorTextIsRedacted()
+    {
+        GeneratorRegistry registry;
+        FakePlugin plugin(FakePlugin::Mode::ReturnedSensitiveError);
+        const auto result = domain::registerPluginGenerators(plugin, registry);
+        QVERIFY(!result.hasValue());
+        QCOMPARE(result.error().message, QStringLiteral("Plugin generator registration failed."));
+        QVERIFY(!result.error().message.contains(QStringLiteral("plugin-private-generated-value")));
     }
 
     void pluginIdConflictsSurfaceAsRegistryErrors()

@@ -13,11 +13,11 @@ The built-in GUI includes:
 - generated-result table with output columns from `outputFields`;
 - sensitive fields masked by default, with an explicit reveal toggle;
 - copy-selected-row with channel-specific confirmation and best-effort clipboard clearing after 30 seconds;
-- TXT/TSV, CSV, and JSON bulk export via `QSaveFile`, with confirmation before releasing sensitive data;
-- Light, Dark, and System palette actions;
+- TXT/TSV, CSV, and JSON bulk export via `QSaveFile`, with confirmation before releasing sensitive data; CSV/TSV string cells and headers are protected against common spreadsheet formula-injection patterns (apostrophe prefix) and TSV control characters are normalized;
+- distinct Light, Dark, and System palette actions;
 - a native plugin load action that displays a full-privilege warning.
 
-The GUI does not save generated results, passwords, or workspace state. Displaying or copying values creates normal Qt/C++ memory copies; clipboard clearing is best-effort and cannot erase copies already made by other processes.
+The Plugins menu is disabled while generation is in flight so a plugin cannot change the selected metadata before a worker result is rendered. The GUI does not save generated results, passwords, or workspace state. Displaying or copying values creates normal Qt/C++ memory copies; clipboard clearing is best-effort and cannot erase copies already made by other processes.
 
 ## Build and smoke test
 
@@ -28,3 +28,8 @@ ctest --preset dev-debug
 ```
 
 `tests/unit/tst_gui_smoke.cpp` exercises a metadata-selected generator through the UI under Qt's offscreen platform plugin. The complete test has to run on a machine with Qt 6 Core, Gui, Widgets, Concurrent, and Test development components installed.
+
+
+### Export safety note
+
+CSV/TSV output is intended to be opened as tabular data. String-valued cells and headers that begin with common formula markers (`=`, `+`, `-`, `@`) after leading whitespace/control characters receive an apostrophe prefix; embedded tabs/newlines in TSV cells are normalized to spaces. Numeric JSON values remain numeric. This mitigation may change the textual representation of a formula-like string and is not a universal guarantee across all spreadsheet/import tools. JSON export is not rewritten. Copy-to-clipboard preserves the exact values because modifying a generated password would make it unusable; treat pasted clipboard values as data only, and do not paste untrusted generated text into spreadsheet formula contexts without review.

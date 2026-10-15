@@ -77,11 +77,11 @@ protected:
                     QStringLiteral("Example tag exceeds the application output length limit.")));
             domain::GeneratedRecord record;
             record.insert(QStringLiteral("exampleTag"), value);
+            ++summary.produced;
             if (sink.accept(std::move(record)) == domain::SinkResponse::Stop) {
                 summary.status = domain::CompletionStatus::StoppedBySink;
                 return R::success(summary);
             }
-            ++summary.produced;
         }
         summary.status = domain::CompletionStatus::Completed;
         return R::success(summary);
@@ -143,11 +143,11 @@ protected:
             }
             domain::GeneratedRecord record;
             record.insert(QStringLiteral("counter"), start + index);
+            ++summary.produced;
             if (sink.accept(std::move(record)) == domain::SinkResponse::Stop) {
                 summary.status = domain::CompletionStatus::StoppedBySink;
                 return R::success(summary);
             }
-            ++summary.produced;
         }
         summary.status = domain::CompletionStatus::Completed;
         return R::success(summary);

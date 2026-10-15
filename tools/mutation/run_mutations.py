@@ -6,11 +6,12 @@ applies ONE textual defect, rebuilds incrementally, runs ctest and records which
 failed. It never touches your working tree.
 
 Outcome per mutation
-  KILLED        every expected test failed
-  KILLED-OTHER  something failed, but not all of expected_failures (review the matrix)
-  SURVIVED      nothing failed  -> the test suite has a gap
+  KILLED        exactly the expected test(s) failed
+  KILLED-OTHER  tests failed, but the failing set differed from expected_failures
+  SURVIVED      no tests failed -> the test suite has a gap
   STALE         the `old` text no longer occurs exactly once (update mutations.json)
   BUILD-ERROR   the mutant did not compile (inconclusive)
+  TEST-ERROR    ctest/JUnit reporting failed, so no test verdict is possible
 
 Exit status is 0 only if every mutation is KILLED.
 
@@ -40,17 +41,29 @@ def run(cmd, cwd, check=False):
 
 
 def failed_tests(build_dir):
+    """Return (failed test names, ctest status, diagnostic).
+
+    Missing or malformed JUnit output is infrastructure failure, never a green test run.
+    """
     junit = os.path.join(build_dir, "junit.xml")
     if os.path.exists(junit):
         os.remove(junit)
-    run(["ctest", "--output-junit", "junit.xml"], build_dir)
+    try:
+        completed = run(["ctest", "--output-junit", "junit.xml", "--output-on-failure"], build_dir)
+    except OSError as error:
+        return None, None, f"ctest could not be launched ({type(error).__name__})"
     if not os.path.exists(junit):
-        return None
+        detail = "ctest did not produce a JUnit report"
+        return None, completed.returncode, detail
+    try:
+        root = ET.parse(junit).getroot()
+    except (ET.ParseError, OSError) as error:
+        return None, completed.returncode, f"JUnit report could not be parsed ({type(error).__name__})"
     failed = set()
-    for case in ET.parse(junit).getroot().iter("testcase"):
+    for case in root.iter("testcase"):
         if case.find("failure") is not None or case.find("error") is not None or case.get("status") == "fail":
             failed.add(case.get("name"))
-    return failed
+    return failed, completed.returncode, None
 
 
 def main():
@@ -91,9 +104,11 @@ def main():
     print(f"[mutation] scratch tree: {tree}")
     run(["cmake", "-S", tree, "-B", build, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Debug", "-DAR_BUILD_TOOLS=OFF"], work, check=True)
     run(["cmake", "--build", build, "-j", str(args.jobs)], work, check=True)
-    baseline = failed_tests(build)
-    if baseline is None or baseline:
-        raise SystemExit(f"baseline is not green (failing: {sorted(baseline or [])}); refusing to mutate")
+    baseline, baseline_rc, baseline_error = failed_tests(build)
+    if baseline_error or baseline_rc != 0 or baseline:
+        raise SystemExit(
+            f"baseline is not green (exit={baseline_rc}, failing={sorted(baseline or [])}, "
+            f"diagnostic={baseline_error}); refusing to mutate")
     print("[mutation] baseline green")
 
     rows = []
@@ -110,6 +125,7 @@ def main():
         if count != 1:
             row["outcome"] = "STALE"
             rows.append(row)
+            json.dump(rows, open(results_path, "w"), indent=2)
             print(f"[mutation] {m['id']}: STALE ({count} matches)")
             continue
         open(path, "w", encoding="utf-8").write(original.replace(m["old"], m["new"], 1))
@@ -118,11 +134,14 @@ def main():
             if built.returncode != 0:
                 row["outcome"] = "BUILD-ERROR"
             else:
-                failed = failed_tests(build)
+                failed, test_rc, test_error = failed_tests(build)
                 row["failed"] = sorted(failed or [])
-                if not failed:
+                if test_error or (test_rc != 0 and not failed):
+                    row["outcome"] = "TEST-ERROR"
+                    row["detail"] = test_error or f"ctest exited {test_rc} without parsed failed test cases"
+                elif not failed and test_rc == 0:
                     row["outcome"] = "SURVIVED"
-                elif set(m["expected_failures"]) <= failed:
+                elif set(m["expected_failures"]) == failed:
                     row["outcome"] = "KILLED"
                 else:
                     row["outcome"] = "KILLED-OTHER"

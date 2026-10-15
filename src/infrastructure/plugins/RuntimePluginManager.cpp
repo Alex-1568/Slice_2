@@ -69,6 +69,20 @@ RuntimePluginManager::RuntimePluginManager(domain::GeneratorRegistry& registry,
 
 RuntimePluginManager::~RuntimePluginManager() = default;
 
+bool RuntimePluginManager::approveFileForSession(const QString& filePath)
+{
+    const QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists() || !fileInfo.isFile())
+        return false;
+    const QString canonical = QDir::cleanPath(fileInfo.canonicalFilePath());
+    if (canonical.isEmpty() || !QLibrary::isLibrary(canonical))
+        return false;
+    if (!m_approvedFiles.contains(canonical))
+        m_approvedFiles.append(canonical);
+    m_options.enabled = true;
+    return true;
+}
+
 void RuntimePluginManager::enableForSession(const QStringList& approvedDirectories)
 {
     QStringList canonical;
@@ -78,6 +92,9 @@ void RuntimePluginManager::enableForSession(const QStringList& approvedDirectori
             canonical.append(value);
     }
     m_options.trustedDirectories = std::move(canonical);
+    // Directory approval is an explicit, broader trust decision. Do not retain prior
+    // file-only approvals when the user replaces the approved directory set.
+    m_approvedFiles.clear();
     m_options.enabled = !m_options.trustedDirectories.isEmpty();
 }
 
@@ -94,6 +111,8 @@ bool RuntimePluginManager::isEnabled() const noexcept
 bool RuntimePluginManager::pathIsTrusted(const QString& canonicalFile) const
 {
     const QString path = QDir::cleanPath(canonicalFile);
+    if (m_approvedFiles.contains(path))
+        return true;
     for (const QString& root : m_options.trustedDirectories) {
         const QString relative = QDir(root).relativeFilePath(path);
         if (relative == QStringLiteral("."))
@@ -193,9 +212,9 @@ InfoResult RuntimePluginManager::loadCanonicalFile(const QString& canonicalFile)
         id = plugin->pluginId();
         version = plugin->pluginVersion();
         apiVersion = plugin->apiVersion();
-    } catch (const std::exception& exception) {
+    } catch (const std::exception&) {
         return fail(Error::Code::InvalidPluginMetadata,
-                    QStringLiteral("Plugin metadata threw an exception: %1").arg(QString::fromUtf8(exception.what())));
+                    QStringLiteral("Plugin metadata threw an exception."));
     } catch (...) {
         return fail(Error::Code::InvalidPluginMetadata,
                     QStringLiteral("Plugin metadata threw an unknown exception."));
@@ -236,19 +255,17 @@ InfoResult RuntimePluginManager::loadCanonicalFile(const QString& canonicalFile)
         // Allocate the bookkeeping slot before mutating the host registry. Once the commit succeeds,
         // appending the record is then a non-allocating move in ordinary implementations.
         m_loaded.reserve(m_loaded.size() + 1U);
-    } catch (const std::exception& exception) {
+    } catch (const std::exception&) {
         return fail(Error::Code::LoadFailed,
-                    QStringLiteral("Unable to retain plugin lifetime bookkeeping: %1")
-                        .arg(QString::fromUtf8(exception.what())));
+                    QStringLiteral("Unable to retain plugin lifetime bookkeeping."));
     }
     try {
         auto commit = m_registry.registerGeneratorsAtomically(registrations);
         if (!commit)
             return fail(Error::Code::RegistrationFailed, commit.error().message);
-    } catch (const std::exception& exception) {
+    } catch (const std::exception&) {
         return fail(Error::Code::RegistrationFailed,
-                    QStringLiteral("Atomic plugin registration threw an exception: %1")
-                        .arg(QString::fromUtf8(exception.what())));
+                    QStringLiteral("Atomic plugin registration threw an exception."));
     } catch (...) {
         return fail(Error::Code::RegistrationFailed,
                     QStringLiteral("Atomic plugin registration threw an unknown exception."));

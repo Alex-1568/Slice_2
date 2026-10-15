@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "note": "Each mutation replaces exactly one occurrence of old with new in a scratch source tree. expected_failures lists CTest names that must fail. Slice 2 identity/template coverage is M43-M55; GUI/runtime-plugin regression coverage is M56-M60. The catalogue has not been fully executed in this environment because Qt 6 development files are unavailable; do not claim kill counts until run against a successful baseline.",
+  "note": "Each mutation replaces exactly one occurrence of old with new in a scratch source tree. expected_failures lists CTest names that must fail. M01-M60 cover core/Slice 2/initial GUI and plugin controls; M61-M65 cover generation-boundary enforcement, spreadsheet formula injection, and GUI/plugin interaction. No mutation kill count is claimed unless a pristine Qt-enabled baseline succeeds and the mutant/test outcome is actually executed.",
   "mutations": [
     {
       "id": "M01",
@@ -254,8 +254,8 @@
       "id": "M22",
       "description": "Plugin API version not checked",
       "file": "src/domain/plugin/IGeneratorPlugin.cpp",
-      "old": "    if (plugin.apiVersion() != kGeneratorApiVersion)",
-      "new": "    if (false)",
+      "old": "        if (api != kGeneratorApiVersion)",
+      "new": "        if (false)",
       "expected_failures": [
         "tst_plugin_boundary"
       ],
@@ -689,6 +689,101 @@
         "tst_gui_smoke"
       ],
       "rationale": "The GUI smoke test verifies that password output is masked by default and only shown after the explicit reveal toggle."
+    },
+    {
+      "id": "M61",
+      "description": "Allow a generator to emit beyond request.count",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "        if (m_submittedRecords >= m_maximumRecords) {",
+      "new": "        if (false && m_submittedRecords >= m_maximumRecords) {",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ],
+      "rationale": "The public generation boundary must cap downstream delivery at request.count even when a plugin overproduces."
+    },
+    {
+      "id": "M62",
+      "description": "Allow further records after the downstream sink requested Stop",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "        if (m_stopRequested) {",
+      "new": "        if (false && m_stopRequested) {",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ],
+      "rationale": "A generator that ignores SinkResponse::Stop must not push additional rows into a streaming consumer."
+    },
+    {
+      "id": "M63",
+      "description": "Remove spreadsheet formula prefix protection",
+      "file": "src/gui/ExportFormatting.cpp",
+      "old": "        dangerous = character == QLatin1Char('=') || character == QLatin1Char('+')\n                    || character == QLatin1Char('-') || character == QLatin1Char('@');",
+      "new": "        dangerous = false;",
+      "expected_failures": [
+        "tst_gui_smoke"
+      ],
+      "rationale": "CSV/TSV export must protect string values that begin with formula markers after leading ignorable characters."
+    },
+    {
+      "id": "M64",
+      "description": "Accept a Completed summary that contains fewer rows than requested",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "    if (summary.status == CompletionStatus::Completed\n        && validatingSink.submittedRecords() != request.count)",
+      "new": "    if (false && summary.status == CompletionStatus::Completed\n        && validatingSink.submittedRecords() != request.count)",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ],
+      "rationale": "Completed must mean the generator submitted exactly request.count valid records."
+    },
+    {
+      "id": "M65",
+      "description": "Leave the native plugin menu enabled during generation",
+      "file": "src/gui/MainWindow.cpp",
+      "old": "    if (m_pluginsMenu)\n        m_pluginsMenu->setEnabled(!busy);",
+      "new": "    if (m_pluginsMenu)\n        m_pluginsMenu->setEnabled(true);",
+      "expected_failures": [
+        "tst_gui_smoke"
+      ],
+      "rationale": "Loading a plugin rebuilds selected metadata; the action must be unavailable while a job is in flight."
+    },
+    {
+      "id": "M66",
+      "description": "Ignore exact-file approval and require broader directory trust instead",
+      "file": "src/infrastructure/plugins/RuntimePluginManager.cpp",
+      "old": "    if (m_approvedFiles.contains(path))\n        return true;",
+      "new": "    if (m_approvedFiles.contains(path))\n        return false;",
+      "expected_failures": [
+        "tst_runtime_plugin"
+      ]
+    },
+    {
+      "id": "M67",
+      "description": "Skip public-boundary request validation before entering generator implementation",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "        requestIssues = validate(request);",
+      "new": "        requestIssues = {};",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ]
+    },
+    {
+      "id": "M68",
+      "description": "Disable the generic generated-string length limit at the validating sink",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "            if (it.value().isString()\n                && static_cast<std::size_t>(it.value().toString().size()) > m_maximumStringLength) {",
+      "new": "            if (false) {",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ]
+    },
+    {
+      "id": "M69",
+      "description": "Allow nested JSON values in request parameters at the public boundary",
+      "file": "src/domain/generator/IGenerator.cpp",
+      "old": "if (it.value().isObject() || it.value().isArray()) {",
+      "new": "if (false) {",
+      "expected_failures": [
+        "tst_generator_boundary"
+      ]
     }
   ]
 }

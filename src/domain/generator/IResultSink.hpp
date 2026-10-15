@@ -21,8 +21,11 @@ class IResultSink
 public:
     virtual ~IResultSink() = default;
 
-    /// Called once per record, on the generating thread. Returning Stop makes the
-    /// generator finish early with CompletionStatus::StoppedBySink.
+    /// Called once per record, on the generating thread. Returning Stop means the current
+    /// record was submitted to the sink (and counts toward GenerationSummary::produced), but
+    /// requests that the generator emit no more records. Implementations decide whether to
+    /// retain that final record. The framework boundary rejects generators that emit again
+    /// after Stop or whose summary count does not match submitted records.
     [[nodiscard]] virtual SinkResponse accept(GeneratedRecord&& record) = 0;
 
 protected:

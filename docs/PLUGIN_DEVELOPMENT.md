@@ -30,3 +30,8 @@ The project builds `plugins/example/ExamplePlugin.cpp` as `ar_example_generator_
 - `AR_BUILD_EXAMPLE_PLUGIN=ON`: build the example module under `build/plugins/`.
 
 For development, enable build warnings and run the runtime plugin integration test plus the GUI smoke test. Native plugins should only be loaded from explicitly selected and trusted locations.
+
+
+### User approval granularity
+
+The GUI approves the exact canonical shared-library file chosen by the user; choosing one file does not implicitly trust every library in its parent directory. Directory scanning remains available only when a caller explicitly approves that directory through `enableForSession()`. Approval is session-scoped, not a sandbox: once loaded, native plugin code runs with host-process privileges.

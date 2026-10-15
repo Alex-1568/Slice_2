@@ -4,6 +4,8 @@
 #include "infrastructure/plugins/RuntimePluginManager.hpp"
 
 #include <QFileInfo>
+#include <QFile>
+#include <QIODevice>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -98,6 +100,40 @@ private slots:
         QCOMPARE(result.error().code, infrastructure::PluginLoadError::Code::RegistrationFailed);
         QCOMPARE(registry.size(), qsizetype{1});
         QVERIFY(!registry.find(QStringLiteral("example-counter")));
+    }
+
+    void fileApprovalDoesNotApproveTheWholeDirectory()
+    {
+        const QString pluginPath = QStringLiteral(AR_EXAMPLE_PLUGIN_PATH);
+        const QFileInfo pluginInfo(pluginPath);
+        QVERIFY(pluginInfo.exists());
+        domain::GeneratorRegistry registry;
+        infrastructure::RuntimePluginManager manager(registry);
+        QVERIFY(manager.approveFileForSession(pluginPath));
+        const auto loaded = manager.loadFile(pluginPath);
+        QVERIFY2(loaded, loaded ? "" : qPrintable(loaded.error().message));
+
+        // A file-only user approval must not authorize scanning sibling shared libraries.
+        const auto directoryResult = manager.loadDirectory(pluginInfo.absolutePath());
+        QVERIFY(!directoryResult.hasValue());
+        QCOMPARE(directoryResult.error().code,
+                 infrastructure::PluginLoadError::Code::OutsideTrustedDirectory);
+    }
+
+    void approveFileRejectsNonLibraries()
+    {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+        const QString textPath = directory.filePath(QStringLiteral("not-a-plugin.txt"));
+        QFile file(textPath);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("not a library"), qint64{13});
+        file.close();
+
+        domain::GeneratorRegistry registry;
+        infrastructure::RuntimePluginManager manager(registry);
+        QVERIFY(!manager.approveFileForSession(textPath));
+        QVERIFY(!manager.isEnabled());
     }
 
     void loadApprovedExamplePluginAndGenerate()

@@ -28,8 +28,9 @@ public:
     [[nodiscard]] virtual common::ValidationResult validate(const GeneratorRequest& request) const = 0;
 
     /// Validated streaming boundary. This method is final so implementations cannot
-    /// bypass metadata/record validation. A valid record is forwarded to the caller's
-    /// sink; an invalid record is withheld and returned as InvalidOutputRecord.
+    /// bypass request validation, shared preconditions, metadata validation, or output-record
+    /// validation. Invalid requests never reach generateIntoImpl; invalid records are withheld
+    /// from the caller's sink and returned as InvalidOutputRecord.
     ///
     /// Streaming is not transactional: valid records delivered before a later error or
     /// cancellation cannot be rolled back. See docs/API_AUDIT.md.

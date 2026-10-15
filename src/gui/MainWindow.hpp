@@ -75,6 +75,7 @@ private:
     std::shared_ptr<const domain::IGenerator> m_selectedGenerator;
 
     QTreeWidget* m_generatorTree = nullptr;
+    QMenu* m_pluginsMenu = nullptr;
     QLabel* m_generatorTitle = nullptr;
     QLabel* m_generatorDescription = nullptr;
     QWidget* m_formContainer = nullptr;
